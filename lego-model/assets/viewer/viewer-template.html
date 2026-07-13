@@ -1,0 +1,2381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="dark light" />
+<meta name="description" content="可组装、可解体并可自由旋转查看的交互式 3D 积木模型。" />
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
+<title>Interactive Brick Model</title>
+<script>
+  try {
+    const savedTheme = localStorage.getItem("brick-forge.theme.v1");
+    document.documentElement.dataset.theme = savedTheme ||
+      (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+  } catch (error) {
+    document.documentElement.dataset.theme = "dark";
+  }
+</script>
+<style>
+  :root {
+    --bg: #05070b;
+    --panel: rgba(13, 17, 23, 0.88);
+    --panel-strong: #111720;
+    --line: rgba(255, 255, 255, 0.12);
+    --line-strong: rgba(255, 255, 255, 0.22);
+    --text: #f4f1e8;
+    --muted: #8f9baa;
+    --accent: #f4c542;
+    --accent-strong: #ffe06a;
+    --cyan: #7de3e8;
+    --danger: #ff7f6e;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #dce9f1;
+    --panel: rgba(255, 255, 255, 0.9);
+    --panel-strong: #f8fbfd;
+    --line: rgba(22, 43, 58, 0.14);
+    --line-strong: rgba(22, 43, 58, 0.27);
+    --text: #172733;
+    --muted: #627482;
+    --accent: #d99d16;
+    --accent-strong: #b77900;
+    --cyan: #167c8b;
+    --danger: #bd4437;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+  body {
+    font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    color: var(--text);
+  }
+  button, input, select { font: inherit; }
+  button { color: inherit; }
+  canvas { display: block; }
+  #studioToggle { display: none; }
+
+  #studioPanel, #studioToggle, dialog, #fileInput { display: none !important; }
+  #viewerHeader {
+    position: fixed; top: 20px; left: 20px; z-index: 25;
+    max-width: min(520px, calc(100vw - 180px)); padding: 14px 18px;
+    border: 1px solid var(--line); border-radius: 18px;
+    background: rgba(10, 14, 20, .72); box-shadow: 0 12px 40px rgba(0, 0, 0, .22);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+  #viewerHeader h1 { font-size: clamp(18px, 2.2vw, 28px); line-height: 1.1; letter-spacing: -.02em; }
+  #viewerHeader p { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+  #viewerStats { margin-top: 8px; color: var(--cyan); font-size: 11px; font-weight: 700; }
+  :root[data-theme="light"] #viewerHeader { background: rgba(255, 255, 255, .82); }
+
+  #themeToggle {
+    position: fixed; top: 20px; right: 20px; z-index: 30;
+    display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 13px;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: rgba(10, 14, 20, .72); color: #dce5ed;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, .2);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    font-size: 11px; font-weight: 700; cursor: pointer; transition: .2s ease;
+  }
+  #themeToggle:hover { transform: translateY(-1px); border-color: var(--line-strong); }
+  #themeIcon { width: 16px; font-size: 15px; line-height: 1; text-align: center; }
+  :root[data-theme="light"] #themeToggle {
+    background: rgba(255, 255, 255, .82); color: var(--text);
+    box-shadow: 0 8px 30px rgba(57, 83, 99, .16);
+  }
+
+  #loading {
+    position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+    background: var(--bg); transition: opacity .5s ease;
+  }
+  .loaderMark {
+    display: flex; align-items: center; gap: 12px; color: var(--accent);
+    font-size: 12px; letter-spacing: 3px; text-transform: uppercase;
+  }
+  .loaderBrick {
+    width: 26px; height: 17px; border: 2px solid currentColor; border-radius: 3px;
+    position: relative; animation: loaderPulse 1.1s ease-in-out infinite;
+  }
+  .loaderBrick::before, .loaderBrick::after {
+    content: ""; position: absolute; top: -6px; width: 7px; height: 5px;
+    border: 2px solid currentColor; border-bottom: 0; border-radius: 3px 3px 0 0;
+  }
+  .loaderBrick::before { left: 3px; }
+  .loaderBrick::after { right: 3px; }
+  @keyframes loaderPulse { 50% { transform: translateY(-5px) rotate(-3deg); } }
+
+  #studioPanel {
+    position: fixed; top: 20px; left: 20px; z-index: 20; width: min(390px, calc(100vw - 40px));
+    padding: 20px; border: 1px solid var(--line); border-radius: 18px;
+    background: linear-gradient(145deg, rgba(18, 24, 33, .94), rgba(8, 11, 16, .86));
+    box-shadow: 0 20px 80px rgba(0, 0, 0, .42);
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  }
+  :root[data-theme="light"] #studioPanel {
+    background: linear-gradient(145deg, rgba(255, 255, 255, .96), rgba(239, 247, 251, .9));
+    box-shadow: 0 20px 70px rgba(52, 79, 96, .18);
+  }
+  .eyebrow {
+    display: flex; align-items: center; justify-content: space-between;
+    color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: 2.2px;
+    text-transform: uppercase;
+  }
+  .brandMark {
+    display: inline-flex; align-items: center; gap: 9px; min-width: 0;
+  }
+  .brandIcon {
+    width: 34px; height: 34px; border-radius: 9px; object-fit: cover;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .28);
+  }
+  .brandText {
+    display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  }
+  .brandText strong {
+    color: var(--text); font-size: 13px; letter-spacing: .6px; line-height: 1;
+  }
+  .brandText span {
+    color: var(--accent); font-size: 9px; letter-spacing: 1.6px; line-height: 1;
+  }
+  .localBadge {
+    display: inline-flex; align-items: center; gap: 6px; color: var(--muted);
+    font-size: 10px; letter-spacing: .5px; text-transform: none;
+  }
+  .localBadge::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%; background: #76d69b;
+    box-shadow: 0 0 10px rgba(118, 214, 155, .75);
+  }
+  #modelName {
+    margin-top: 13px; max-width: 340px; font-size: clamp(24px, 3vw, 34px);
+    line-height: 1.08; letter-spacing: -.8px; text-wrap: balance;
+  }
+  #modelDescription {
+    margin-top: 9px; min-height: 36px; color: var(--muted);
+    font-size: 12px; line-height: 1.6;
+  }
+  .modelStat {
+    display: flex; gap: 16px; margin: 15px 0 18px; padding-top: 13px;
+    border-top: 1px solid var(--line); color: var(--muted); font-size: 11px;
+  }
+  .modelStat strong { color: var(--text); font-size: 14px; margin-right: 4px; }
+
+  .fieldLabel {
+    display: block; margin-bottom: 8px; color: #cbd2da;
+    font-size: 11px; font-weight: 700; letter-spacing: .6px;
+  }
+  .keywordWrap { position: relative; }
+  #keyword {
+    width: 100%; height: 46px; padding: 0 112px 0 14px; border: 1px solid var(--line);
+    border-radius: 11px; outline: none; background: rgba(255, 255, 255, .055);
+    color: var(--text); transition: border-color .2s, box-shadow .2s;
+  }
+  #keyword::placeholder { color: #66717e; }
+  #keyword:focus { border-color: rgba(244, 197, 66, .72); box-shadow: 0 0 0 3px rgba(244, 197, 66, .1); }
+  #btnGenerate {
+    position: absolute; top: 5px; right: 5px; height: 36px; padding: 0 14px;
+    border: 0; border-radius: 8px; background: var(--accent); color: #171306;
+    font-size: 12px; font-weight: 800; cursor: pointer; transition: .2s ease;
+  }
+  #btnGenerate:hover { background: var(--accent-strong); transform: translateY(-1px); }
+  #btnGenerate:disabled { opacity: .55; cursor: wait; transform: none; }
+
+  .panelFooter {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin-top: 16px;
+  }
+  #generationStatus {
+    min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px;
+    line-height: 1.4; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #generationStatus.busy { color: var(--cyan); }
+  #generationStatus.error { color: var(--danger); white-space: normal; }
+  .toolButtons { display: flex; gap: 6px; flex: 0 0 auto; }
+  .iconButton {
+    height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: rgba(255, 255, 255, .04); color: #c7d0da; font-size: 11px;
+    cursor: pointer; transition: .2s ease;
+  }
+  .iconButton:hover { border-color: var(--line-strong); background: rgba(255, 255, 255, .08); }
+  #historyCount {
+    display: inline-grid; place-items: center; min-width: 16px; height: 16px; margin-left: 4px;
+    padding: 0 4px; border-radius: 999px; background: rgba(244, 197, 66, .15);
+    color: var(--accent-strong); font-size: 9px; font-weight: 800;
+  }
+
+  #controlPanel {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 20;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    width: min(570px, calc(100vw - 36px)); padding: 13px 16px; border: 1px solid var(--line);
+    border-radius: 16px; background: rgba(10, 14, 20, .78);
+    box-shadow: 0 12px 50px rgba(0, 0, 0, .35);
+    backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
+  }
+  :root[data-theme="light"] #controlPanel {
+    background: rgba(250, 253, 255, .84);
+    box-shadow: 0 12px 42px rgba(52, 79, 96, .16);
+  }
+  #playButtons { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; align-items: center; }
+  .playButton {
+    height: 36px; padding: 0 19px; border: 1px solid var(--line); border-radius: 999px;
+    background: rgba(255, 255, 255, .045); color: #dbe2ea;
+    font-size: 12px; letter-spacing: 2px; cursor: pointer; transition: .2s ease;
+  }
+  .playButton:hover { border-color: var(--line-strong); background: rgba(255, 255, 255, .1); }
+  .playButton.primary { border-color: var(--accent); background: var(--accent); color: #171306; font-weight: 800; }
+  .playButton[aria-pressed="true"] {
+    border-color: var(--accent); background: var(--accent); color: #171306;
+    box-shadow: 0 0 0 3px rgba(244, 197, 66, .13); font-weight: 800;
+  }
+  label.chk {
+    display: flex; align-items: center; gap: 6px; margin-left: 4px;
+    color: var(--muted); font-size: 11px; cursor: pointer; white-space: nowrap;
+  }
+  label.chk input { accent-color: var(--accent); }
+  .scatterControl {
+    display: flex; align-items: center; gap: 6px; margin-left: 2px;
+    color: var(--muted); font-size: 10px; white-space: nowrap;
+  }
+  #scatterShape {
+    height: 32px; padding: 0 28px 0 10px; border: 1px solid var(--line); border-radius: 999px;
+    outline: none; background: rgba(255, 255, 255, .045); color: var(--text);
+    font-size: 10px; cursor: pointer;
+  }
+  #scatterShape:focus { border-color: var(--accent); }
+  #sliderRow { display: flex; align-items: center; gap: 10px; width: 100%; }
+  #sliderRow span { color: var(--muted); font-size: 10px; letter-spacing: 1px; }
+  input[type=range] {
+    flex: 1; appearance: none; -webkit-appearance: none; height: 3px; border-radius: 3px;
+    background: linear-gradient(90deg, #57606a, var(--accent)); outline: none; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    appearance: none; -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
+    background: #fff8d8; box-shadow: 0 0 0 4px rgba(244, 197, 66, .16); cursor: grab;
+  }
+  #stateText { min-height: 14px; color: var(--cyan); font-size: 10px; letter-spacing: 1px; }
+
+  #viewHint {
+    position: fixed; right: 20px; bottom: 24px; z-index: 10; pointer-events: none;
+    color: #657180; font-size: 10px; line-height: 1.8; text-align: right;
+  }
+
+  dialog {
+    width: min(520px, calc(100vw - 32px)); border: 1px solid var(--line-strong);
+    border-radius: 18px; padding: 0; background: var(--panel-strong); color: var(--text);
+    box-shadow: 0 30px 120px rgba(0, 0, 0, .72);
+  }
+  dialog::backdrop { background: rgba(1, 3, 6, .76); backdrop-filter: blur(6px); }
+  :root[data-theme="light"] dialog { box-shadow: 0 30px 100px rgba(48, 72, 88, .28); }
+  :root[data-theme="light"] dialog::backdrop { background: rgba(47, 67, 80, .4); }
+  :root[data-theme="light"] #keyword,
+  :root[data-theme="light"] .settingField input,
+  :root[data-theme="light"] .iconButton,
+  :root[data-theme="light"] .modalButton,
+  :root[data-theme="light"] .playButton {
+    background-color: rgba(255, 255, 255, .62); color: var(--text);
+  }
+  :root[data-theme="light"] .fieldLabel { color: #354b5a; }
+  :root[data-theme="light"] #keyword::placeholder { color: #82929d; }
+  :root[data-theme="light"] #scatterShape { background: rgba(255, 255, 255, .72); color: var(--text); }
+  :root[data-theme="light"] .playButton[aria-pressed="true"] {
+    border-color: var(--accent); background: var(--accent); color: #171306;
+  }
+  .modalHead {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;
+    padding: 22px 22px 17px; border-bottom: 1px solid var(--line);
+  }
+  .modalHead h2 { font-size: 20px; }
+  .modalHead p { margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+  #closeSettings, #closeHistory, #closeDemos {
+    width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 50%;
+    background: transparent; color: var(--muted); cursor: pointer;
+  }
+  .modalBody { padding: 20px 22px; }
+  .settingField { margin-bottom: 16px; }
+  .settingField input {
+    width: 100%; height: 43px; padding: 0 12px; border: 1px solid var(--line);
+    border-radius: 9px; outline: none; background: rgba(255, 255, 255, .045); color: var(--text);
+  }
+  .settingField input:focus { border-color: rgba(244, 197, 66, .72); }
+  .settingHint {
+    padding: 12px; border: 1px solid rgba(125, 227, 232, .18); border-radius: 9px;
+    background: rgba(125, 227, 232, .055); color: #9fb3bf; font-size: 10px; line-height: 1.6;
+  }
+  .modalActions {
+    display: flex; justify-content: flex-end; gap: 8px; padding: 16px 22px 20px;
+  }
+  .modalButton {
+    height: 39px; padding: 0 17px; border: 1px solid var(--line); border-radius: 9px;
+    background: rgba(255, 255, 255, .05); cursor: pointer;
+  }
+  .modalButton.primary { border-color: var(--accent); background: var(--accent); color: #171306; font-weight: 800; }
+  #historyDialog, #demoDialog { width: min(620px, calc(100vw - 32px)); }
+  .historyBody { padding: 14px 16px 18px; }
+  #historyList {
+    display: flex; flex-direction: column; gap: 8px; max-height: min(58vh, 560px);
+    overflow-y: auto; overscroll-behavior: contain;
+  }
+  #demoList {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px;
+    max-height: min(58vh, 560px); overflow-y: auto; overscroll-behavior: contain;
+  }
+  .demoLoad {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 7px;
+    min-height: 92px; padding: 14px; border: 1px solid var(--line); border-radius: 12px;
+    background: rgba(255, 255, 255, .025); color: var(--text); text-align: left;
+    cursor: pointer; transition: .2s ease;
+  }
+  .demoLoad:hover { border-color: rgba(244, 197, 66, .46); transform: translateY(-1px); }
+  .demoLoad strong { font-size: 14px; }
+  .demoLoad span { color: var(--muted); font-size: 10px; line-height: 1.5; }
+  .demoTag {
+    margin-top: auto; color: var(--accent-strong) !important; font-size: 9px !important;
+    font-weight: 800; letter-spacing: .5px;
+  }
+  .historyItem {
+    display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: stretch;
+    padding: 8px; border: 1px solid var(--line); border-radius: 12px;
+    background: rgba(255, 255, 255, .025);
+  }
+  .historyItem:hover { border-color: rgba(244, 197, 66, .34); }
+  .historyLoad {
+    display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center;
+    min-width: 0; padding: 4px; border: 0; background: transparent; text-align: left;
+    cursor: pointer;
+  }
+  .historyPalette {
+    display: grid; grid-template-columns: repeat(2, 18px); grid-auto-rows: 18px;
+    width: 40px; height: 40px; gap: 2px; overflow: hidden; border-radius: 8px;
+    background: rgba(255, 255, 255, .06);
+  }
+  .historyPalette span { display: block; }
+  .historyContent { min-width: 0; }
+  .historyTitle {
+    overflow: hidden; color: var(--text); font-size: 13px; font-weight: 800;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .historyMeta {
+    display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px;
+    color: var(--muted); font-size: 10px;
+  }
+  .historyMeta strong { color: #cbd4de; font-weight: 700; }
+  .historyQuality {
+    display: block; margin-top: 7px; padding: 7px 9px; border-radius: 7px;
+    font-size: 9px; line-height: 1.55; white-space: normal;
+  }
+  .historyQuality.pass {
+    background: rgba(118, 214, 155, .09); color: #78c99a;
+  }
+  .historyQuality.warning {
+    background: rgba(255, 127, 110, .08); color: var(--danger);
+  }
+  .historyActions {
+    display: flex; flex-direction: column; justify-content: center; gap: 5px;
+  }
+  .historyRegenerate {
+    height: 30px; padding: 0 9px; border: 1px solid rgba(244, 197, 66, .28);
+    border-radius: 8px; background: rgba(244, 197, 66, .07);
+    color: var(--accent-strong); font-size: 9px; font-weight: 800; cursor: pointer;
+  }
+  .historyRegenerate:hover { border-color: var(--accent); background: rgba(244, 197, 66, .14); }
+  .historyDelete {
+    align-self: flex-end; width: 32px; height: 28px; border: 1px solid transparent;
+    border-radius: 8px; background: transparent; color: #677482; cursor: pointer;
+  }
+  .historyDelete:hover { border-color: rgba(255, 127, 110, .25); color: var(--danger); background: rgba(255, 127, 110, .07); }
+  .historyEmpty {
+    display: grid; place-items: center; min-height: 190px; padding: 30px;
+    border: 1px dashed var(--line); border-radius: 12px; color: var(--muted);
+    font-size: 11px; line-height: 1.8; text-align: center;
+  }
+  .historyLimit {
+    margin-top: 12px; color: #687584; font-size: 9px; line-height: 1.5; text-align: center;
+  }
+  #fileInput { display: none; }
+
+  @media (max-width: 900px) {
+    #viewHint { display: none; }
+    #studioPanel { top: 12px; left: 12px; width: min(370px, calc(100vw - 24px)); }
+    #themeToggle { top: 12px; right: 12px; }
+  }
+  @media (max-width: 560px) {
+    #studioToggle {
+      position: fixed; top: 12px; left: 12px; z-index: 32; display: grid; place-items: center;
+      width: 48px; height: 48px; padding: 0; border: 1px solid var(--line); border-radius: 50%;
+      background: var(--panel); box-shadow: 0 10px 34px rgba(0, 0, 0, .24);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); cursor: pointer;
+      transition: transform .2s ease, border-color .2s ease;
+    }
+    #studioToggle:hover { transform: translateY(-1px); border-color: var(--line-strong); }
+    #studioToggle img { width: 34px; height: 34px; border-radius: 50%; }
+    #studioToggle[aria-expanded="true"] { border-color: var(--accent); }
+    #studioPanel {
+      top: 70px; padding: 14px; max-height: calc(100vh - 164px); overflow-y: auto;
+      transform-origin: top left; transition: opacity .18s ease, transform .18s ease, visibility .18s;
+    }
+    #studioPanel[data-mobile-open="false"] {
+      opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(-7px) scale(.97);
+    }
+    #studioPanel[data-mobile-open="true"] {
+      opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0) scale(1);
+    }
+    #modelName { font-size: 25px; }
+    #modelDescription { display: none; }
+    .modelStat { margin: 12px 0 14px; }
+    #controlPanel { bottom: 10px; gap: 7px; padding: 10px 11px; }
+    #playButtons { flex-wrap: nowrap; width: 100%; gap: 5px; }
+    .playButton { flex: 0 0 auto; height: 34px; padding: 0 10px; letter-spacing: 1px; }
+    .scatterControl { min-width: 0; margin-left: 0; font-size: 0; }
+    #scatterShape { width: 102px; height: 32px; padding-left: 9px; font-size: 10px; }
+    label.chk { flex: 0 0 auto; gap: 4px; margin-left: 0; font-size: 0; }
+    label.chk::after { content: "旋转"; font-size: 10px; }
+    #demoList { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; }
+  }
+  @media (max-width: 640px) {
+    #viewerHeader { top: 12px; left: 12px; max-width: calc(100vw - 128px); padding: 10px 12px; border-radius: 14px; }
+    #viewerHeader p { display: none; }
+    #viewerStats { margin-top: 5px; font-size: 10px; }
+    #themeToggle { top: 12px; right: 12px; }
+    #viewHint { display: none; }
+  }
+</style>
+</head>
+<body>
+<button id="themeToggle" type="button" aria-label="切换到白天模式">
+  <span id="themeIcon" aria-hidden="true">☀</span>
+  <span id="themeText">白天</span>
+</button>
+
+<header id="viewerHeader">
+  <h1 id="viewerModelName">正在载入模型</h1>
+  <p id="viewerModelDescription">交互式 3D 积木模型</p>
+  <div id="viewerStats">正在构建积木实例…</div>
+</header>
+
+<div id="loading">
+  <div class="loaderMark"><span class="loaderBrick"></span><span>正在启动 BrickMorph AI</span></div>
+</div>
+
+<button id="studioToggle" type="button" aria-label="展开模型生成面板" aria-expanded="false">
+  <img src="assets/brickmorph-icon-64.png" alt="" />
+</button>
+
+<section id="studioPanel" data-mobile-open="false" aria-label="AI 乐高模型生成器">
+  <div class="eyebrow">
+    <span class="brandMark">
+      <img class="brandIcon" src="assets/brickmorph-icon-64.png" alt="" />
+      <span class="brandText">
+        <strong>BrickMorph AI</strong>
+        <span>乐构工坊</span>
+      </span>
+    </span>
+    <span class="localBadge">配置仅存本机</span>
+  </div>
+  <h1 id="modelName">正在载入示例</h1>
+  <p id="modelDescription">从示例库读取高精度模型数据。</p>
+  <div class="modelStat">
+    <span><strong id="brickCount">16,000</strong>块积木 · 顶格</span>
+    <span><strong id="primitiveCount">0</strong>个造型体</span>
+    <span>实例化渲染</span>
+  </div>
+
+  <label class="fieldLabel" for="keyword">想搭什么？</label>
+  <div class="keywordWrap">
+    <input id="keyword" type="text" maxlength="48" autocomplete="off" placeholder="例如：高达、大黄蜂、蒸汽朋克城堡" />
+    <button id="btnGenerate" type="button">生成模型</button>
+  </div>
+
+  <div class="panelFooter">
+    <p id="generationStatus" aria-live="polite">演示模型已就绪</p>
+    <div class="toolButtons">
+      <button id="btnDemos" class="iconButton" type="button">示例</button>
+      <button id="btnHistory" class="iconButton" type="button">历史<span id="historyCount">0</span></button>
+      <button id="btnImport" class="iconButton" type="button" title="载入之前下载的模型代码">导入</button>
+      <button id="btnSettings" class="iconButton" type="button" title="大模型 API 设置">设置</button>
+    </div>
+  </div>
+</section>
+
+<section id="controlPanel" aria-label="3D 装配控制">
+  <div id="playButtons">
+    <button id="btnAssemble" class="playButton" type="button" aria-pressed="true">组 装</button>
+    <button id="btnExplode" class="playButton" type="button" aria-pressed="false">解 体</button>
+    <label class="scatterControl" for="scatterShape">解体形态
+      <select id="scatterShape">
+        <option value="ring">环形漩涡</option>
+        <option value="sphere">球体</option>
+        <option value="tornado">立体龙卷风</option>
+      </select>
+    </label>
+    <label class="chk"><input type="checkbox" id="chkRotate" checked />自动旋转</label>
+  </div>
+  <div id="sliderRow">
+    <span>散件</span>
+    <input type="range" id="progress" min="0" max="1000" value="0" aria-label="装配进度" />
+    <span>成形</span>
+  </div>
+  <div id="stateText">积木盘旋待命</div>
+</section>
+
+<div id="viewHint">
+  左键拖拽 · 旋转<br />
+  滚轮 / 双指 · 缩放<br />
+  右键拖拽 · 平移
+</div>
+
+<dialog id="settingsDialog" aria-labelledby="settingsTitle">
+  <form id="settingsForm" method="dialog">
+    <div class="modalHead">
+      <div>
+        <h2 id="settingsTitle">大模型 API 设置</h2>
+        <p>支持 OpenAI 兼容的 Chat Completions 接口</p>
+      </div>
+      <button id="closeSettings" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="modalBody">
+      <div class="settingField">
+        <label class="fieldLabel" for="apiBaseUrl">Base URL</label>
+        <input id="apiBaseUrl" type="url" required placeholder="https://api.example.com/v1" />
+      </div>
+      <div class="settingField">
+        <label class="fieldLabel" for="apiModel">模型名称</label>
+        <input id="apiModel" type="text" required placeholder="your-model-name" />
+      </div>
+      <div class="settingField">
+        <label class="fieldLabel" for="apiKey">API Key</label>
+        <input id="apiKey" type="password" required autocomplete="off" placeholder="sk-..." />
+      </div>
+      <p class="settingHint">
+        这些配置只写入当前浏览器的 localStorage，不会发送给本项目的服务器。
+        生成时，浏览器会直接请求你填写的 API 地址；该地址需要允许浏览器跨域访问。
+      </p>
+    </div>
+    <div class="modalActions">
+      <button id="clearSettings" class="modalButton" type="button">清除本地配置</button>
+      <button class="modalButton primary" type="submit">保存设置</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="historyDialog" aria-labelledby="historyTitle">
+  <div class="modalHead">
+    <div>
+      <h2 id="historyTitle">生成历史</h2>
+      <p>点击任意记录即可直接载入，不会再次调用大模型</p>
+    </div>
+    <button id="closeHistory" type="button" aria-label="关闭">×</button>
+  </div>
+  <div class="historyBody">
+    <div id="historyList"></div>
+    <p class="historyLimit">最近 30 条记录保存在当前浏览器；不会上传到项目服务器。</p>
+  </div>
+  <div class="modalActions">
+    <button id="clearHistory" class="modalButton" type="button">清空历史</button>
+    <button id="doneHistory" class="modalButton primary" type="button">完成</button>
+  </div>
+</dialog>
+
+<dialog id="demoDialog" aria-labelledby="demoTitle">
+  <div class="modalHead">
+    <div>
+      <h2 id="demoTitle">示例模型</h2>
+      <p>点击即可载入项目内置的高精度模型，不调用大模型 API</p>
+    </div>
+    <button id="closeDemos" type="button" aria-label="关闭">×</button>
+  </div>
+  <div class="historyBody">
+    <div id="demoList"></div>
+    <p class="historyLimit">示例数据随网站发布，不会写入你的生成历史。</p>
+  </div>
+  <div class="modalActions">
+    <button id="doneDemos" class="modalButton primary" type="button">完成</button>
+  </div>
+</dialog>
+
+<input id="fileInput" type="file" accept=".json,application/json" />
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/": "./vendor/addons/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import * as BufferGeometryUtils from "three/addons/utils/BufferGeometryUtils.js";
+
+const EMBEDDED_MODEL = __BRICK_MODEL_JSON__;
+
+const TOP_DETAIL_COUNT = 16000;
+const ALLOWED_COUNTS = [3000, 5000, 8000, TOP_DETAIL_COUNT];
+const CONFIG_KEY = "brick-forge.openai-compatible.v1";
+const HISTORY_KEY = "brick-forge.generation-history.v1";
+const THEME_KEY = "brick-forge.theme.v1";
+const SCATTER_KEY = "brick-forge.scatter-shape.v1";
+const GENERATOR_VERSION = "quality-v2";
+const HISTORY_LIMIT = 30;
+const DEMO_MANIFEST_URL = "models/manifest.json";
+const SCATTER_LABELS = {
+  ring: "环形漩涡",
+  sphere: "球体",
+  tornado: "立体龙卷风"
+};
+let selectedCount = TOP_DETAIL_COUNT;
+let currentSpec = null;
+let currentModel = null;
+let progressValue = 0;
+let targetProgress = 1;
+let autoProgress = true;
+let started = false;
+let elapsed = 0;
+let needsMatrixUpdate = true;
+let scatterMode = "ring";
+let demoManifest = null;
+
+function mulberry32(seed) {
+  return function () {
+    seed |= 0;
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashNumber(x, y, z) {
+  let h = (x * 73856093) ^ (y * 19349663) ^ (z * 83492791);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
+function hashString(value) {
+  let h = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    h ^= value.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function asVector(value, length, fieldName) {
+  if (!Array.isArray(value) || value.length !== length) {
+    throw new Error(fieldName + " 必须是 " + length + " 个数字组成的数组");
+  }
+  return value.map(function (item) {
+    const number = Number(item);
+    if (!Number.isFinite(number) || Math.abs(number) > 240) {
+      throw new Error(fieldName + " 含有无效或过大的数值");
+    }
+    return number;
+  });
+}
+
+function positive(value, fieldName, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0 || number > (max || 240)) {
+    throw new Error(fieldName + " 必须是合理的正数");
+  }
+  return number;
+}
+
+function nonNegative(value, fieldName, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0 || number > (max || 240)) {
+    throw new Error(fieldName + " 必须是合理的非负数");
+  }
+  return number;
+}
+
+function validateModelCode(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("模型代码不是有效的 JSON 对象");
+  }
+
+  const allowedTypes = new Set(["box", "ellipsoid", "cylinder", "cone", "capsule", "torus", "frustum"]);
+  const paletteInput = Array.isArray(input.palette) ? input.palette : [];
+  if (paletteInput.length < 1 || paletteInput.length > 12) {
+    throw new Error("palette 需要包含 1 到 12 个颜色");
+  }
+  const palette = paletteInput.map(function (color) {
+    const value = String(color).trim();
+    if (!/^#[0-9a-fA-F]{6}$/.test(value)) throw new Error("颜色必须使用 #RRGGBB 格式");
+    return value;
+  });
+
+  if (!Array.isArray(input.primitives) || input.primitives.length < 1 || input.primitives.length > 80) {
+    throw new Error("primitives 需要包含 1 到 80 个造型体");
+  }
+
+  const primitives = input.primitives.map(function (source, index) {
+    if (!source || typeof source !== "object") throw new Error("第 " + (index + 1) + " 个造型体无效");
+    const type = String(source.type || "");
+    if (!allowedTypes.has(type)) throw new Error("不支持造型体类型：" + type);
+    const op = source.op === "subtract" ? "subtract" : "add";
+    const material = clamp(Math.round(Number(source.material) || 0), 0, palette.length - 1);
+    const primitive = {
+      type: type,
+      op: op,
+      material: material,
+      part: String(source.part || "").trim().slice(0, 48)
+    };
+
+    if (type === "capsule") {
+      primitive.start = asVector(source.start, 3, "capsule.start");
+      primitive.end = asVector(source.end, 3, "capsule.end");
+      primitive.radius = positive(source.radius, "capsule.radius", 120);
+    } else {
+      primitive.center = asVector(source.center, 3, type + ".center");
+      primitive.rotation = source.rotation ? asVector(source.rotation, 3, type + ".rotation") : [0, 0, 0];
+      if (type === "box" || type === "ellipsoid") {
+        primitive.size = asVector(source.size, 3, type + ".size").map(function (item) {
+          return positive(item, type + ".size", 240);
+        });
+      } else if (type === "cylinder") {
+        primitive.radius = positive(source.radius, "cylinder.radius", 120);
+        primitive.height = positive(source.height, "cylinder.height", 240);
+        primitive.axis = ["x", "y", "z"].includes(source.axis) ? source.axis : "y";
+      } else if (type === "cone") {
+        primitive.radiusTop = nonNegative(source.radiusTop, "cone.radiusTop", 120);
+        primitive.radiusBottom = positive(source.radiusBottom, "cone.radiusBottom", 120);
+        primitive.height = positive(source.height, "cone.height", 240);
+        primitive.axis = ["x", "y", "z"].includes(source.axis) ? source.axis : "y";
+      } else if (type === "torus") {
+        primitive.majorRadius = positive(source.majorRadius, "torus.majorRadius", 120);
+        primitive.minorRadius = positive(source.minorRadius, "torus.minorRadius", 60);
+        if (primitive.minorRadius >= primitive.majorRadius) {
+          throw new Error("torus.minorRadius 必须小于 majorRadius");
+        }
+        primitive.axis = ["x", "y", "z"].includes(source.axis) ? source.axis : "z";
+      } else if (type === "frustum") {
+        primitive.bottomSize = asVector(source.bottomSize, 2, "frustum.bottomSize").map(function (item) {
+          return positive(item, "frustum.bottomSize", 240);
+        });
+        primitive.topSize = asVector(source.topSize, 2, "frustum.topSize").map(function (item) {
+          return nonNegative(item, "frustum.topSize", 240);
+        });
+        primitive.height = positive(source.height, "frustum.height", 240);
+      }
+    }
+    return primitive;
+  });
+
+  if (!primitives.some(function (primitive) { return primitive.op === "add"; })) {
+    throw new Error("模型至少需要一个 add 造型体");
+  }
+
+  const requested = Number(input.requestedBrickCount);
+  const selfCheckInput = input.qualitySelfCheck && typeof input.qualitySelfCheck === "object"
+    ? input.qualitySelfCheck
+    : null;
+  const qualitySelfCheck = selfCheckInput ? {
+    primitiveCount: Number(selfCheckInput.primitiveCount) || 0,
+    geometryTypeCount: Number(selfCheckInput.geometryTypeCount) || 0,
+    boxRatio: Number(selfCheckInput.boxRatio) || 0,
+    rotatedCount: Number(selfCheckInput.rotatedCount) || 0,
+    subtractCount: Number(selfCheckInput.subtractCount) || 0,
+    materialCount: Number(selfCheckInput.materialCount) || 0,
+    topThreeVolumeRatio: Number(selfCheckInput.topThreeVolumeRatio) || 0,
+    dominantMaterialRatio: Number(selfCheckInput.dominantMaterialRatio) || 0,
+    landmarkCount: Number(selfCheckInput.landmarkCount) || 0,
+    namedPartRatio: Number(selfCheckInput.namedPartRatio) || 0,
+    uniquePartCount: Number(selfCheckInput.uniquePartCount) || 0,
+    passed: selfCheckInput.passed === true
+  } : null;
+  const landmarks = Array.isArray(input.landmarks)
+    ? input.landmarks.map(function (item) {
+      return String(item || "").trim().slice(0, 60);
+    }).filter(Boolean).slice(0, 16)
+    : [];
+  return {
+    version: "1.0",
+    name: String(input.name || "未命名模型").trim().slice(0, 80) || "未命名模型",
+    description: String(input.description || "由 AI 生成的乐高造型").trim().slice(0, 180),
+    subjectClass: String(input.subjectClass || "").trim().slice(0, 40),
+    landmarks: landmarks,
+    qualitySelfCheck: qualitySelfCheck,
+    palette: palette,
+    primitives: primitives,
+    requestedBrickCount: ALLOWED_COUNTS.includes(requested) ? requested : selectedCount,
+    keyword: String(input.keyword || "").trim().slice(0, 48),
+    generatedAt: input.generatedAt || null,
+    generatorVersion: String(input.generatorVersion || "").trim().slice(0, 40)
+  };
+}
+
+function primitiveHasRotation(primitive) {
+  return Array.isArray(primitive.rotation) && primitive.rotation.some(function (value) {
+    return Math.abs(value) >= 1;
+  });
+}
+
+function primitiveVolume(primitive) {
+  if (primitive.type === "box") {
+    return primitive.size[0] * primitive.size[1] * primitive.size[2];
+  }
+  if (primitive.type === "ellipsoid") {
+    return Math.PI / 6 * primitive.size[0] * primitive.size[1] * primitive.size[2];
+  }
+  if (primitive.type === "cylinder") {
+    return Math.PI * primitive.radius * primitive.radius * primitive.height;
+  }
+  if (primitive.type === "cone") {
+    return Math.PI * primitive.height / 3 * (
+      primitive.radiusTop * primitive.radiusTop +
+      primitive.radiusTop * primitive.radiusBottom +
+      primitive.radiusBottom * primitive.radiusBottom
+    );
+  }
+  if (primitive.type === "capsule") {
+    const length = Math.hypot(
+      primitive.end[0] - primitive.start[0],
+      primitive.end[1] - primitive.start[1],
+      primitive.end[2] - primitive.start[2]
+    );
+    return Math.PI * primitive.radius * primitive.radius * length +
+      4 / 3 * Math.PI * Math.pow(primitive.radius, 3);
+  }
+  if (primitive.type === "torus") {
+    return 2 * Math.PI * Math.PI * primitive.majorRadius *
+      primitive.minorRadius * primitive.minorRadius;
+  }
+  if (primitive.type === "frustum") {
+    const bottomArea = primitive.bottomSize[0] * primitive.bottomSize[1];
+    const topArea = primitive.topSize[0] * primitive.topSize[1];
+    return primitive.height / 3 * (bottomArea + topArea + Math.sqrt(bottomArea * topArea));
+  }
+  return 0;
+}
+
+function assessModelQuality(spec, count, requireSemanticMetadata) {
+  const topDetail = count === TOP_DETAIL_COUNT;
+  const primitives = spec.primitives;
+  const added = primitives.filter(function (primitive) { return primitive.op === "add"; });
+  const typeCount = new Set(primitives.map(function (primitive) { return primitive.type; })).size;
+  const boxCount = primitives.filter(function (primitive) { return primitive.type === "box"; }).length;
+  const rotatedCount = primitives.filter(primitiveHasRotation).length;
+  const subtractCount = primitives.length - added.length;
+  const materialCount = new Set(added.map(function (primitive) { return primitive.material; })).size;
+  const namedParts = primitives.map(function (primitive) { return primitive.part; }).filter(Boolean);
+  const uniqueParts = new Set(namedParts.map(function (part) { return part.toLocaleLowerCase(); })).size;
+  const volumes = added.map(primitiveVolume).filter(function (volume) { return volume > 0; });
+  const totalVolume = volumes.reduce(function (sum, volume) { return sum + volume; }, 0) || 1;
+  const topThreeVolume = volumes.slice().sort(function (a, b) { return b - a; })
+    .slice(0, 3).reduce(function (sum, volume) { return sum + volume; }, 0);
+  const materialVolumes = new Map();
+  added.forEach(function (primitive) {
+    materialVolumes.set(
+      primitive.material,
+      (materialVolumes.get(primitive.material) || 0) + primitiveVolume(primitive)
+    );
+  });
+  const dominantMaterialShare = Math.max.apply(null, Array.from(materialVolumes.values()).concat([0])) / totalVolume;
+
+  const minPrimitives = topDetail ? 48 : count >= 8000 ? 30 : count >= 5000 ? 26 : 22;
+  const minTypes = topDetail ? 5 : 3;
+  const maxBoxShare = topDetail ? 0.62 : 0.74;
+  const minRotated = topDetail
+    ? Math.max(10, Math.ceil(primitives.length * 0.22))
+    : Math.max(3, Math.ceil(primitives.length * 0.1));
+  const minSubtract = topDetail ? 2 : 1;
+  const issues = [];
+
+  if (primitives.length < minPrimitives) {
+    issues.push("造型体只有 " + primitives.length + " 个，至少需要 " + minPrimitives + " 个");
+  }
+  if (typeCount < minTypes) {
+    issues.push("只使用了 " + typeCount + " 类几何，至少需要 " + minTypes + " 类");
+  }
+  if (boxCount / primitives.length > maxBoxShare) {
+    issues.push("方盒占比 " + Math.round(boxCount / primitives.length * 100) + "%，模型会退化成大色块");
+  }
+  if (rotatedCount < minRotated) {
+    issues.push("带旋转的部件只有 " + rotatedCount + " 个，至少需要 " + minRotated + " 个");
+  }
+  if (subtractCount < minSubtract) {
+    issues.push("挖空结构只有 " + subtractCount + " 个，至少需要 " + minSubtract + " 个");
+  }
+  if (materialCount < (topDetail ? 4 : 3)) {
+    issues.push("有效配色层次只有 " + materialCount + " 种");
+  }
+  if (topDetail && topThreeVolume / totalVolume > 0.58) {
+    issues.push("最大的三个部件占总体积 " + Math.round(topThreeVolume / totalVolume * 100) + "%，主体过度块状");
+  }
+  if (topDetail && dominantMaterialShare > 0.72) {
+    issues.push("单一颜色约占体积 " + Math.round(dominantMaterialShare * 100) + "%，缺少结构分色");
+  }
+  if (requireSemanticMetadata) {
+    if (spec.landmarks.length < 6) {
+      issues.push("landmarks 只有 " + spec.landmarks.length + " 项，至少需要 6 项原型特征");
+    }
+    if (namedParts.length < Math.ceil(primitives.length * 0.9)) {
+      issues.push("至少 90% 的造型体必须标注 part");
+    }
+    if (uniqueParts < (topDetail ? 10 : 6)) {
+      issues.push("语义部件只有 " + uniqueParts + " 组，结构拆分不足");
+    }
+    if (!spec.qualitySelfCheck) {
+      issues.push("缺少 LLM 返回前的 qualitySelfCheck 自检结果");
+    } else if (!spec.qualitySelfCheck.passed) {
+      issues.push("LLM 的 qualitySelfCheck 没有确认全部指标通过");
+    }
+  }
+
+  return {
+    issues: issues,
+    metrics: {
+      primitiveCount: primitives.length,
+      typeCount: typeCount,
+      boxShare: boxCount / primitives.length,
+      rotatedCount: rotatedCount,
+      subtractCount: subtractCount,
+      materialCount: materialCount,
+      uniqueParts: uniqueParts,
+      topThreeVolumeShare: topThreeVolume / totalVolume,
+      dominantMaterialShare: dominantMaterialShare
+    }
+  };
+}
+
+function containsPrimitive(x, y, z, primitive) {
+  if (primitive.type === "capsule") {
+    const ax = primitive.start[0], ay = primitive.start[1], az = primitive.start[2];
+    const bx = primitive.end[0], by = primitive.end[1], bz = primitive.end[2];
+    const abx = bx - ax, aby = by - ay, abz = bz - az;
+    const lengthSquared = abx * abx + aby * aby + abz * abz || 1;
+    const t = clamp(((x - ax) * abx + (y - ay) * aby + (z - az) * abz) / lengthSquared, 0, 1);
+    const dx = x - (ax + abx * t);
+    const dy = y - (ay + aby * t);
+    const dz = z - (az + abz * t);
+    return dx * dx + dy * dy + dz * dz <= primitive.radius * primitive.radius;
+  }
+
+  let localX = x - primitive.center[0];
+  let localY = y - primitive.center[1];
+  let localZ = z - primitive.center[2];
+  const rx = -primitive.rotation[0] * Math.PI / 180;
+  const ry = -primitive.rotation[1] * Math.PI / 180;
+  const rz = -primitive.rotation[2] * Math.PI / 180;
+
+  let c = Math.cos(rz), s = Math.sin(rz);
+  let nextX = localX * c - localY * s;
+  let nextY = localX * s + localY * c;
+  localX = nextX; localY = nextY;
+
+  c = Math.cos(ry); s = Math.sin(ry);
+  nextX = localX * c + localZ * s;
+  let nextZ = -localX * s + localZ * c;
+  localX = nextX; localZ = nextZ;
+
+  c = Math.cos(rx); s = Math.sin(rx);
+  nextY = localY * c - localZ * s;
+  nextZ = localY * s + localZ * c;
+  localY = nextY; localZ = nextZ;
+
+  if (primitive.type === "box") {
+    return Math.abs(localX) <= primitive.size[0] / 2 &&
+      Math.abs(localY) <= primitive.size[1] / 2 &&
+      Math.abs(localZ) <= primitive.size[2] / 2;
+  }
+  if (primitive.type === "ellipsoid") {
+    const nx = localX / (primitive.size[0] / 2);
+    const ny = localY / (primitive.size[1] / 2);
+    const nz = localZ / (primitive.size[2] / 2);
+    return nx * nx + ny * ny + nz * nz <= 1;
+  }
+  if (primitive.type === "frustum") {
+    if (Math.abs(localY) > primitive.height / 2) return false;
+    const t = localY / primitive.height + 0.5;
+    const width = primitive.bottomSize[0] + (primitive.topSize[0] - primitive.bottomSize[0]) * t;
+    const depth = primitive.bottomSize[1] + (primitive.topSize[1] - primitive.bottomSize[1]) * t;
+    return Math.abs(localX) <= width / 2 && Math.abs(localZ) <= depth / 2;
+  }
+
+  let radialA, radialB, axialPosition;
+  if (primitive.axis === "x") {
+    radialA = localY; radialB = localZ; axialPosition = localX;
+  } else if (primitive.axis === "z") {
+    radialA = localX; radialB = localY; axialPosition = localZ;
+  } else {
+    radialA = localX; radialB = localZ; axialPosition = localY;
+  }
+  const radialSquared = radialA * radialA + radialB * radialB;
+  if (primitive.type === "torus") {
+    const radialDistance = Math.sqrt(radialSquared) - primitive.majorRadius;
+    return radialDistance * radialDistance + axialPosition * axialPosition <=
+      primitive.minorRadius * primitive.minorRadius;
+  }
+  if (Math.abs(axialPosition) > primitive.height / 2) return false;
+  if (primitive.type === "cylinder") return radialSquared <= primitive.radius * primitive.radius;
+
+  const t = axialPosition / primitive.height + 0.5;
+  const radius = primitive.radiusBottom + (primitive.radiusTop - primitive.radiusBottom) * t;
+  return radialSquared <= radius * radius;
+}
+
+function rotateHalfExtents(half, rotation) {
+  const rx = rotation[0] * Math.PI / 180;
+  const ry = rotation[1] * Math.PI / 180;
+  const rz = rotation[2] * Math.PI / 180;
+  const sx = Math.sin(rx), cx = Math.cos(rx);
+  const sy = Math.sin(ry), cy = Math.cos(ry);
+  const sz = Math.sin(rz), cz = Math.cos(rz);
+  const matrix = [
+    cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx,
+    sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx,
+    -sy, cy * sx, cy * cx
+  ];
+  return [
+    Math.abs(matrix[0]) * half[0] + Math.abs(matrix[1]) * half[1] + Math.abs(matrix[2]) * half[2],
+    Math.abs(matrix[3]) * half[0] + Math.abs(matrix[4]) * half[1] + Math.abs(matrix[5]) * half[2],
+    Math.abs(matrix[6]) * half[0] + Math.abs(matrix[7]) * half[1] + Math.abs(matrix[8]) * half[2]
+  ];
+}
+
+function primitiveBounds(primitive) {
+  if (primitive.type === "capsule") {
+    const r = primitive.radius;
+    return {
+      min: [
+        Math.min(primitive.start[0], primitive.end[0]) - r,
+        Math.min(primitive.start[1], primitive.end[1]) - r,
+        Math.min(primitive.start[2], primitive.end[2]) - r
+      ],
+      max: [
+        Math.max(primitive.start[0], primitive.end[0]) + r,
+        Math.max(primitive.start[1], primitive.end[1]) + r,
+        Math.max(primitive.start[2], primitive.end[2]) + r
+      ]
+    };
+  }
+  let half;
+  if (primitive.type === "box" || primitive.type === "ellipsoid") {
+    half = primitive.size.map(function (value) { return value / 2; });
+  } else if (primitive.type === "frustum") {
+    const width = Math.max(primitive.bottomSize[0], primitive.topSize[0]);
+    const depth = Math.max(primitive.bottomSize[1], primitive.topSize[1]);
+    half = [width / 2, primitive.height / 2, depth / 2];
+  } else if (primitive.type === "torus") {
+    const outer = primitive.majorRadius + primitive.minorRadius;
+    half = primitive.axis === "x" ? [primitive.minorRadius, outer, outer]
+      : primitive.axis === "y" ? [outer, primitive.minorRadius, outer]
+      : [outer, outer, primitive.minorRadius];
+  } else {
+    const radialSize = primitive.radius || Math.max(primitive.radiusTop, primitive.radiusBottom);
+    half = primitive.axis === "x" ? [primitive.height / 2, radialSize, radialSize]
+      : primitive.axis === "z" ? [radialSize, radialSize, primitive.height / 2]
+      : [radialSize, primitive.height / 2, radialSize];
+  }
+  const extent = rotateHalfExtents(half, primitive.rotation);
+  return {
+    min: primitive.center.map(function (value, axis) { return value - extent[axis]; }),
+    max: primitive.center.map(function (value, axis) { return value + extent[axis]; })
+  };
+}
+
+function modelBounds(spec) {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  spec.primitives.filter(function (primitive) { return primitive.op === "add"; }).forEach(function (primitive) {
+    const bounds = primitiveBounds(primitive);
+    for (let axis = 0; axis < 3; axis++) {
+      min[axis] = Math.min(min[axis], bounds.min[axis]);
+      max[axis] = Math.max(max[axis], bounds.max[axis]);
+    }
+  });
+  return { min: min, max: max };
+}
+
+function preparePrimitivesForSampling(primitives) {
+  return primitives.map(function (primitive) {
+    return { primitive: primitive, bounds: primitiveBounds(primitive) };
+  });
+}
+
+function materialAt(x, y, z, preparedPrimitives) {
+  let material = -1;
+  for (let i = 0; i < preparedPrimitives.length; i++) {
+    const prepared = preparedPrimitives[i];
+    const bounds = prepared.bounds;
+    if (x < bounds.min[0] || x > bounds.max[0] ||
+        y < bounds.min[1] || y > bounds.max[1] ||
+        z < bounds.min[2] || z > bounds.max[2]) continue;
+    const primitive = prepared.primitive;
+    if (containsPrimitive(x, y, z, primitive)) {
+      material = primitive.op === "subtract" ? -1 : primitive.material;
+    }
+  }
+  return material;
+}
+
+function sampleAtCellSize(spec, count, cellSize, bounds, preparedPrimitives) {
+  const margin = cellSize * 0.51;
+  const min = bounds.min.map(function (value) { return value - margin; });
+  const max = bounds.max.map(function (value) { return value + margin; });
+  const dimensions = min.map(function (value, axis) {
+    return Math.max(1, Math.ceil((max[axis] - value) / cellSize));
+  });
+  const gridCells = dimensions[0] * dimensions[1] * dimensions[2];
+  if (gridCells > 1400000) return { tooDense: true, voxels: [] };
+
+  const voxels = [];
+  for (let ix = 0; ix < dimensions[0]; ix++) {
+    const x = min[0] + (ix + 0.5) * cellSize;
+    for (let iy = 0; iy < dimensions[1]; iy++) {
+      const y = min[1] + (iy + 0.5) * cellSize;
+      for (let iz = 0; iz < dimensions[2]; iz++) {
+        const z = min[2] + (iz + 0.5) * cellSize;
+        const material = materialAt(x, y, z, preparedPrimitives);
+        if (material >= 0) voxels.push({ ix: ix, iy: iy, iz: iz, material: material });
+      }
+    }
+  }
+  return { tooDense: false, voxels: voxels, dimensions: dimensions };
+}
+
+function buildExactBrickSet(spec, count) {
+  const bounds = modelBounds(spec);
+  const preparedPrimitives = preparePrimitivesForSampling(spec.primitives);
+  const span = bounds.max.map(function (value, axis) { return Math.max(1, value - bounds.min[axis]); });
+  const boxVolume = span[0] * span[1] * span[2];
+  const targetSample = Math.round(count * 1.1);
+  let cellSize = Math.cbrt(boxVolume / Math.max(targetSample * 4, 1));
+  let best = null;
+
+  for (let attempt = 0; attempt < 9; attempt++) {
+    const sample = sampleAtCellSize(spec, count, cellSize, bounds, preparedPrimitives);
+    if (sample.tooDense) {
+      cellSize *= 1.35;
+      continue;
+    }
+    const amount = sample.voxels.length;
+    if (amount >= count && (!best || amount < best.voxels.length)) {
+      best = sample;
+    }
+    if (amount === 0) {
+      cellSize *= 0.62;
+      continue;
+    }
+    const factor = clamp(Math.cbrt(amount / targetSample), 0.68, 1.42);
+    cellSize *= factor;
+    if (Math.abs(amount - targetSample) / targetSample < 0.035) break;
+  }
+
+  if (!best) {
+    for (let rescue = 0; rescue < 5; rescue++) {
+      cellSize *= 0.78;
+      const sample = sampleAtCellSize(spec, count, cellSize, bounds, preparedPrimitives);
+      if (!sample.tooDense && sample.voxels.length >= count) {
+        best = sample;
+        break;
+      }
+    }
+  }
+  if (!best) throw new Error("造型体积太小或过于分散，无法生成所选积木数量");
+
+  const occupied = new Set(best.voxels.map(function (voxel) {
+    return voxel.ix + "|" + voxel.iy + "|" + voxel.iz;
+  }));
+  const neighbors = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+  const shell = [];
+  const interior = [];
+  best.voxels.forEach(function (voxel) {
+    const exposed = neighbors.some(function (delta) {
+      return !occupied.has(
+        (voxel.ix + delta[0]) + "|" + (voxel.iy + delta[1]) + "|" + (voxel.iz + delta[2])
+      );
+    });
+    (exposed ? shell : interior).push(voxel);
+  });
+
+  function stableSort(array) {
+    return array.sort(function (a, b) {
+      return hashNumber(a.ix, a.iy, a.iz) - hashNumber(b.ix, b.iy, b.iz);
+    });
+  }
+
+  let chosen;
+  if (shell.length >= count) {
+    chosen = stableSort(shell).slice(0, count);
+  } else {
+    chosen = shell.concat(stableSort(interior).slice(0, count - shell.length));
+  }
+
+  const range = {
+    min: [
+      Math.min.apply(null, chosen.map(function (v) { return v.ix; })),
+      Math.min.apply(null, chosen.map(function (v) { return v.iy; })),
+      Math.min.apply(null, chosen.map(function (v) { return v.iz; }))
+    ],
+    max: [
+      Math.max.apply(null, chosen.map(function (v) { return v.ix; })),
+      Math.max.apply(null, chosen.map(function (v) { return v.iy; })),
+      Math.max.apply(null, chosen.map(function (v) { return v.iz; }))
+    ]
+  };
+  const center = range.min.map(function (value, axis) { return (value + range.max[axis]) / 2; });
+  const bricks = chosen.map(function (voxel) {
+    return {
+      x: voxel.ix - center[0],
+      y: voxel.iy - center[1],
+      z: voxel.iz - center[2],
+      material: voxel.material
+    };
+  });
+  return { bricks: bricks, range: range };
+}
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05070b);
+scene.fog = new THREE.Fog(0x05070b, 150, 440);
+
+const camera = new THREE.PerspectiveCamera(43, innerWidth / innerHeight, 0.1, 1400);
+camera.position.set(50, 34, 64);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 12;
+controls.maxDistance = 300;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.65;
+
+const hemisphereLight = new THREE.HemisphereLight(0xbdd7f2, 0x18130b, 1.25);
+scene.add(hemisphereLight);
+const keyLight = new THREE.DirectionalLight(0xfff2d1, 2.4);
+keyLight.position.set(50, 75, 42);
+scene.add(keyLight);
+const rimLight = new THREE.DirectionalLight(0x5f8cff, 1.5);
+rimLight.position.set(-55, 18, -48);
+scene.add(rimLight);
+
+const starRand = mulberry32(20260713);
+const starPositions = new Float32Array(2600 * 3);
+for (let i = 0; i < 2600; i++) {
+  const radius = 390 + starRand() * 430;
+  const theta = starRand() * Math.PI * 2;
+  const phi = Math.acos(starRand() * 2 - 1);
+  starPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+  starPositions[i * 3 + 1] = radius * Math.cos(phi);
+  starPositions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+}
+const starGeometry = new THREE.BufferGeometry();
+starGeometry.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
+const starField = new THREE.Points(starGeometry, new THREE.PointsMaterial({
+  color: 0xbfd6ff,
+  size: 1.5,
+  sizeAttenuation: true,
+  transparent: true,
+  opacity: 0.78,
+  depthWrite: false
+}));
+scene.add(starField);
+
+function applyTheme(theme, persist) {
+  const light = theme === "light";
+  const normalized = light ? "light" : "dark";
+  document.documentElement.dataset.theme = normalized;
+  document.getElementById("themeIcon").textContent = light ? "☾" : "☀";
+  document.getElementById("themeText").textContent = light ? "黑夜" : "白天";
+  document.getElementById("themeToggle").setAttribute(
+    "aria-label",
+    light ? "切换到黑夜模式" : "切换到白天模式"
+  );
+
+  const background = light ? 0xdce9f1 : 0x05070b;
+  scene.background.setHex(background);
+  scene.fog.color.setHex(background);
+  renderer.toneMappingExposure = light ? 1.0 : 1.12;
+  starField.material.opacity = light ? 0.18 : 0.78;
+  starField.material.color.setHex(light ? 0x718c9e : 0xbfd6ff);
+  hemisphereLight.color.setHex(light ? 0xf2fbff : 0xbdd7f2);
+  hemisphereLight.groundColor.setHex(light ? 0x8aa0ad : 0x18130b);
+  hemisphereLight.intensity = light ? 1.45 : 1.25;
+  keyLight.color.setHex(light ? 0xffffff : 0xfff2d1);
+  keyLight.intensity = light ? 2.0 : 2.4;
+  rimLight.color.setHex(light ? 0x78a9c2 : 0x5f8cff);
+  rimLight.intensity = light ? 0.9 : 1.5;
+
+  if (persist) {
+    try {
+      localStorage.setItem(THEME_KEY, normalized);
+    } catch (error) {
+      console.warn("无法保存主题偏好", error);
+    }
+  }
+}
+
+document.getElementById("themeToggle").addEventListener("click", function () {
+  applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light", true);
+});
+applyTheme(document.documentElement.dataset.theme || "dark", false);
+
+const cubeGeometry = new THREE.BoxGeometry(0.94, 0.94, 0.94);
+const studGeometry = new THREE.CylinderGeometry(0.27, 0.27, 0.18, 10);
+studGeometry.translate(0, 0.56, 0);
+const brickGeometry = BufferGeometryUtils.mergeGeometries([cubeGeometry, studGeometry]);
+const brickMaterial = new THREE.MeshStandardMaterial({ roughness: 0.48, metalness: 0.08 });
+
+function fitCamera(bricks) {
+  let radius = 10;
+  bricks.forEach(function (brick) {
+    radius = Math.max(radius, Math.hypot(brick.x, brick.y, brick.z));
+  });
+  controls.target.set(0, 0, 0);
+  camera.position.set(radius * 1.5, radius * 1.05, radius * 1.9);
+  controls.minDistance = Math.max(8, radius * 0.38);
+  controls.maxDistance = Math.max(160, radius * 6);
+  controls.update();
+}
+
+function disposeCurrentModel() {
+  if (!currentModel) return;
+  scene.remove(currentModel.group);
+  currentModel.mesh.dispose();
+  currentModel = null;
+}
+
+function createRenderModel(spec, bricks) {
+  disposeCurrentModel();
+  const count = bricks.length;
+  const mesh = new THREE.InstancedMesh(brickGeometry, brickMaterial, count);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const group = new THREE.Group();
+  group.add(mesh);
+  scene.add(group);
+
+  const target = new Float32Array(count * 3);
+  const vortex = new Float32Array(count * 4);
+  const sphere = new Float32Array(count * 3);
+  const tornado = new Float32Array(count * 4);
+  const tumble = new Float32Array(count * 6);
+  const misc = new Float32Array(count * 3);
+  const seed = hashString(spec.name + "|" + count + "|" + spec.primitives.length);
+  const random = mulberry32(seed);
+  let maxDistance = 0.001;
+
+  bricks.forEach(function (brick) {
+    maxDistance = Math.max(maxDistance, Math.hypot(brick.x, brick.y, brick.z));
+  });
+  bricks.forEach(function (brick, index) {
+    target[index * 3] = brick.x;
+    target[index * 3 + 1] = brick.y;
+    target[index * 3 + 2] = brick.z;
+
+    const arm = index % 3;
+    const radius = maxDistance * (0.75 + 1.65 * Math.pow(random(), 0.68));
+    vortex[index * 4] = radius;
+    vortex[index * 4 + 1] = arm * Math.PI * 2 / 3 + radius * 0.16 + (random() - 0.5) * 0.38;
+    vortex[index * 4 + 2] = (random() - 0.5) * (2.4 + radius * 0.12);
+    vortex[index * 4 + 3] = (24 + random() * 10) / (radius + 6);
+
+    const sphereRadius = maxDistance * 1.85 * Math.cbrt(random());
+    const sphereCosTheta = random() * 2 - 1;
+    const sphereSinTheta = Math.sqrt(1 - sphereCosTheta * sphereCosTheta);
+    const spherePhi = random() * Math.PI * 2;
+    sphere[index * 3] = sphereRadius * sphereSinTheta * Math.cos(spherePhi);
+    sphere[index * 3 + 1] = sphereRadius * sphereCosTheta;
+    sphere[index * 3 + 2] = sphereRadius * sphereSinTheta * Math.sin(spherePhi);
+
+    const heightRatio = random();
+    const tornadoRadius = maxDistance *
+      (0.1 + 1.55 * Math.pow(heightRatio, 1.35)) *
+      (0.78 + random() * 0.28);
+    tornado[index * 4] = tornadoRadius;
+    tornado[index * 4 + 1] = heightRatio * Math.PI * 12 + random() * Math.PI * 2;
+    tornado[index * 4 + 2] = (heightRatio - 0.5) * maxDistance * 3.4 +
+      (random() - 0.5) * maxDistance * 0.12;
+    tornado[index * 4 + 3] = (0.35 + random() * 0.28) / (0.35 + heightRatio);
+
+    tumble[index * 6] = 0.6 + random() * 1.8;
+    tumble[index * 6 + 1] = 0.6 + random() * 1.8;
+    tumble[index * 6 + 2] = 0.6 + random() * 1.8;
+    tumble[index * 6 + 3] = random() * Math.PI * 2;
+    tumble[index * 6 + 4] = random() * Math.PI * 2;
+    tumble[index * 6 + 5] = random() * Math.PI * 2;
+
+    misc[index * 3] = Math.hypot(brick.x, brick.y, brick.z) / maxDistance * 0.72 + random() * 0.28;
+    misc[index * 3 + 1] = 5 + random() * 13;
+    misc[index * 3 + 2] = random() * Math.PI * 2;
+
+    const baseColor = new THREE.Color(spec.palette[brick.material] || spec.palette[0]);
+    const jitter = (hashNumber(brick.x * 2, brick.y * 2, brick.z * 2) - 0.5) * 0.08;
+    baseColor.offsetHSL(0, 0, jitter);
+    mesh.setColorAt(index, baseColor);
+  });
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+  currentModel = {
+    group: group,
+    mesh: mesh,
+    bricks: bricks,
+    target: target,
+    vortex: vortex,
+    sphere: sphere,
+    tornado: tornado,
+    tumble: tumble,
+    misc: misc
+  };
+  fitCamera(bricks);
+  needsMatrixUpdate = true;
+}
+
+const matrix = new THREE.Matrix4();
+const position = new THREE.Vector3();
+const tumbleQuaternion = new THREE.Quaternion();
+const identityQuaternion = new THREE.Quaternion();
+const euler = new THREE.Euler();
+const scale = new THREE.Vector3(1, 1, 1);
+const tilt = 0.22;
+const tiltCos = Math.cos(tilt);
+const tiltSin = Math.sin(tilt);
+const easeInOutCubic = function (t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+};
+
+function updateInstances() {
+  if (!currentModel || !needsMatrixUpdate) return;
+  const model = currentModel;
+  const count = model.bricks.length;
+  const stagger = 1.7;
+  const span = 1 + stagger;
+
+  for (let i = 0; i < count; i++) {
+    const localProgress = clamp(progressValue * span - model.misc[i * 3] * stagger, 0, 1);
+    const eased = easeInOutCubic(localProgress);
+    const tx = model.target[i * 3];
+    const ty = model.target[i * 3 + 1];
+    const tz = model.target[i * 3 + 2];
+
+    if (eased >= 1) {
+      position.set(tx, ty, tz);
+      matrix.compose(position, identityQuaternion, scale);
+    } else {
+      let vx, vy, vz;
+      if (scatterMode === "sphere") {
+        const sx = model.sphere[i * 3];
+        const sy = model.sphere[i * 3 + 1];
+        const sz = model.sphere[i * 3 + 2];
+        const rotation = elapsed * 0.11;
+        const rotationCos = Math.cos(rotation);
+        const rotationSin = Math.sin(rotation);
+        vx = sx * rotationCos + sz * rotationSin;
+        vy = sy + Math.sin(elapsed * 0.7 + model.misc[i * 3 + 2]) * 0.35;
+        vz = -sx * rotationSin + sz * rotationCos;
+      } else if (scatterMode === "tornado") {
+        const radius = model.tornado[i * 4] *
+          (1 + Math.sin(elapsed * 0.9 + model.misc[i * 3 + 2]) * 0.035);
+        const angle = model.tornado[i * 4 + 1] + elapsed * model.tornado[i * 4 + 3];
+        vx = radius * Math.cos(angle);
+        vy = model.tornado[i * 4 + 2] +
+          Math.sin(elapsed * 1.35 + model.misc[i * 3 + 2]) * 0.55;
+        vz = radius * Math.sin(angle);
+      } else {
+        const radius = model.vortex[i * 4];
+        const angle = model.vortex[i * 4 + 1] + elapsed * model.vortex[i * 4 + 3] * 0.65;
+        vx = radius * Math.cos(angle);
+        vy = model.vortex[i * 4 + 2] + Math.sin(elapsed * 1.1 + model.misc[i * 3 + 2]) * 1.5;
+        vz = radius * Math.sin(angle);
+        const tiltedY = vy * tiltCos - vz * tiltSin;
+        vz = vy * tiltSin + vz * tiltCos;
+        vy = tiltedY;
+      }
+
+      euler.set(
+        elapsed * model.tumble[i * 6] + model.tumble[i * 6 + 3],
+        elapsed * model.tumble[i * 6 + 1] + model.tumble[i * 6 + 4],
+        elapsed * model.tumble[i * 6 + 2] + model.tumble[i * 6 + 5]
+      );
+      tumbleQuaternion.setFromEuler(euler);
+
+      if (eased <= 0) {
+        position.set(vx, vy, vz);
+        matrix.compose(position, tumbleQuaternion, scale);
+      } else {
+        const arc = model.misc[i * 3 + 1] * (1 - eased);
+        const cx = (vx + tx) / 2;
+        const cy = (vy + ty) / 2 + arc;
+        const cz = (vz + tz) / 2;
+        const inverse = 1 - eased;
+        position.set(
+          inverse * inverse * vx + 2 * eased * inverse * cx + eased * eased * tx,
+          inverse * inverse * vy + 2 * eased * inverse * cy + eased * eased * ty,
+          inverse * inverse * vz + 2 * eased * inverse * cz + eased * eased * tz
+        );
+        tumbleQuaternion.slerp(identityQuaternion, eased);
+        matrix.compose(position, tumbleQuaternion, scale);
+      }
+    }
+    model.mesh.setMatrixAt(i, matrix);
+  }
+  model.mesh.instanceMatrix.needsUpdate = true;
+  needsMatrixUpdate = progressValue < 0.999;
+}
+
+function setStatus(message, type) {
+  const element = document.getElementById("generationStatus");
+  element.textContent = message;
+  element.className = type || "";
+}
+
+function setSelectedCount(count) {
+  selectedCount = count;
+}
+
+function renderSpec(spec, count, shouldAnimate) {
+  setStatus("正在本地展开 " + count.toLocaleString("zh-CN") + " 块积木…", "busy");
+  return new Promise(function (resolve, reject) {
+    requestAnimationFrame(function () {
+      try {
+        const result = buildExactBrickSet(spec, count);
+        createRenderModel(spec, result.bricks);
+        currentSpec = spec;
+        selectedCount = count;
+        setSelectedCount(count);
+        document.getElementById("modelName").textContent = spec.name;
+        document.getElementById("modelDescription").textContent = spec.description;
+        document.getElementById("brickCount").textContent = count.toLocaleString("zh-CN");
+        document.getElementById("primitiveCount").textContent = spec.primitives.length;
+        progressValue = shouldAnimate ? 0 : 1;
+        targetProgress = 1;
+        autoProgress = true;
+        needsMatrixUpdate = true;
+        setStatus("模型已就绪 · 代码已在本地生成");
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
+function endpointFromBaseUrl(baseUrl) {
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  if (/\/chat\/completions$/i.test(trimmed)) return trimmed;
+  return trimmed + "/chat/completions";
+}
+
+function loadConfig() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CONFIG_KEY) || "{}");
+    return {
+      baseUrl: String(parsed.baseUrl || ""),
+      model: String(parsed.model || ""),
+      apiKey: String(parsed.apiKey || "")
+    };
+  } catch (error) {
+    return { baseUrl: "", model: "", apiKey: "" };
+  }
+}
+
+function saveConfig(config) {
+  localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+}
+
+function loadHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(function (record) {
+      return record && typeof record === "object" && record.id && record.spec;
+    }).slice(0, HISTORY_LIMIT);
+  } catch (error) {
+    return [];
+  }
+}
+
+function normalizeHistoryMatchValue(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase();
+}
+
+function findHistoryMatch(keyword, modelName) {
+  const normalizedKeyword = normalizeHistoryMatchValue(keyword);
+  const normalizedModel = normalizeHistoryMatchValue(modelName);
+  if (!normalizedKeyword || !normalizedModel) return null;
+  return loadHistory().find(function (record) {
+    const recordKeyword = record.keyword || (record.spec && (record.spec.keyword || record.spec.name));
+    return normalizeHistoryMatchValue(recordKeyword) === normalizedKeyword &&
+      normalizeHistoryMatchValue(record.apiModel) === normalizedModel;
+  }) || null;
+}
+
+function persistHistory(records) {
+  const trimmed = records.slice(0, HISTORY_LIMIT);
+  while (trimmed.length) {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+      updateHistoryCount(trimmed.length);
+      return true;
+    } catch (error) {
+      trimmed.pop();
+    }
+  }
+  try {
+    localStorage.setItem(HISTORY_KEY, "[]");
+  } catch (error) {
+    return false;
+  }
+  updateHistoryCount(0);
+  return records.length === 0;
+}
+
+function updateHistoryCount(count) {
+  const amount = typeof count === "number" ? count : loadHistory().length;
+  document.getElementById("historyCount").textContent = String(amount);
+}
+
+function createHistoryId() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+}
+
+function addHistoryRecord(spec, modelName, quality, regeneratedFrom) {
+  const records = loadHistory();
+  records.unshift({
+    id: createHistoryId(),
+    createdAt: spec.generatedAt || new Date().toISOString(),
+    apiModel: String(modelName || "未记录模型").slice(0, 120),
+    generatorVersion: GENERATOR_VERSION,
+    keyword: String(spec.keyword || spec.name).slice(0, 80),
+    brickCount: spec.requestedBrickCount,
+    qualityPassed: quality.issues.length === 0,
+    qualityIssues: quality.issues.slice(0, 20),
+    qualityMetrics: quality.metrics,
+    regeneratedFrom: regeneratedFrom || null,
+    spec: spec
+  });
+  return persistHistory(records);
+}
+
+function formatHistoryTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "时间未知";
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(date);
+}
+
+function renderHistoryList() {
+  const records = loadHistory();
+  const list = document.getElementById("historyList");
+  list.replaceChildren();
+  updateHistoryCount(records.length);
+
+  if (!records.length) {
+    const empty = document.createElement("div");
+    empty.className = "historyEmpty";
+    empty.textContent = "还没有生成记录。\\n完成第一次 AI 生成后，模型会自动出现在这里。";
+    empty.style.whiteSpace = "pre-line";
+    list.appendChild(empty);
+    return;
+  }
+
+  records.forEach(function (record) {
+    const item = document.createElement("article");
+    item.className = "historyItem";
+    let recordQualityIssues = Array.isArray(record.qualityIssues)
+      ? record.qualityIssues.slice()
+      : [];
+    if (!Array.isArray(record.qualityIssues)) {
+      try {
+        const legacySpec = validateModelCode(record.spec);
+        recordQualityIssues = assessModelQuality(
+          legacySpec,
+          Number(record.brickCount) || legacySpec.requestedBrickCount,
+          false
+        ).issues;
+      } catch (error) {
+        recordQualityIssues = ["旧记录无法通过当前模型代码校验"];
+      }
+    }
+
+    const loadButton = document.createElement("button");
+    loadButton.className = "historyLoad";
+    loadButton.type = "button";
+    loadButton.title = "立即载入 " + (record.keyword || record.spec.name || "历史模型");
+
+    const palette = document.createElement("span");
+    palette.className = "historyPalette";
+    const colors = Array.isArray(record.spec.palette) ? record.spec.palette.slice(0, 4) : ["#66717e"];
+    while (colors.length < 4) colors.push(colors[colors.length - 1] || "#66717e");
+    colors.forEach(function (color) {
+      const swatch = document.createElement("span");
+      swatch.style.background = /^#[0-9a-fA-F]{6}$/.test(color) ? color : "#66717e";
+      palette.appendChild(swatch);
+    });
+
+    const content = document.createElement("span");
+    content.className = "historyContent";
+    const title = document.createElement("span");
+    title.className = "historyTitle";
+    title.textContent = record.keyword || record.spec.name || "未命名模型";
+    const meta = document.createElement("span");
+    meta.className = "historyMeta";
+
+    const time = document.createElement("span");
+    time.textContent = formatHistoryTime(record.createdAt);
+    const model = document.createElement("span");
+    model.append("模型 ");
+    const modelName = document.createElement("strong");
+    modelName.textContent = record.apiModel || "未记录";
+    model.appendChild(modelName);
+    const bricks = document.createElement("span");
+    bricks.append("积木 ");
+    const brickCount = document.createElement("strong");
+    brickCount.textContent = Number(record.brickCount || 0).toLocaleString("zh-CN") + " 块";
+    bricks.appendChild(brickCount);
+
+    const quality = document.createElement("span");
+    quality.className = "historyQuality " + (recordQualityIssues.length ? "warning" : "pass");
+    quality.textContent = recordQualityIssues.length
+      ? "检测问题：" + recordQualityIssues.join("；")
+      : "质量检查通过";
+
+    meta.append(time, model, bricks);
+    content.append(title, meta, quality);
+    loadButton.append(palette, content);
+    loadButton.addEventListener("click", async function () {
+      document.getElementById("historyDialog").close();
+      setStatus("正在载入历史模型…", "busy");
+      try {
+        const spec = validateModelCode(record.spec);
+        const count = ALLOWED_COUNTS.includes(Number(record.brickCount))
+          ? Number(record.brickCount)
+          : spec.requestedBrickCount;
+        await renderSpec(spec, count, true);
+        document.getElementById("keyword").value = record.keyword || spec.keyword || spec.name;
+        setStatus("已从历史载入 · 无需再次调用 API");
+      } catch (error) {
+        setStatus("历史记录载入失败：" + error.message, "error");
+      }
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "historyActions";
+    const regenerateButton = document.createElement("button");
+    regenerateButton.className = "historyRegenerate";
+    regenerateButton.type = "button";
+    regenerateButton.textContent = "重新生成";
+    regenerateButton.title = recordQualityIssues.length
+      ? "带着这条记录的检测问题重新调用一次 API"
+      : "基于这条记录重新调用一次 API";
+    regenerateButton.addEventListener("click", function () {
+      document.getElementById("historyDialog").close();
+      document.getElementById("keyword").value =
+        record.keyword || (record.spec && record.spec.keyword) || record.spec.name || "";
+      setSelectedCount(TOP_DETAIL_COUNT);
+      generateFromKeyword({
+        forceApi: true,
+        qualityFeedback: recordQualityIssues,
+        regeneratedFrom: record.id
+      });
+    });
+
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "historyDelete";
+    deleteButton.type = "button";
+    deleteButton.setAttribute("aria-label", "删除 " + (record.keyword || "这条记录"));
+    deleteButton.title = "删除记录";
+    deleteButton.textContent = "×";
+    deleteButton.addEventListener("click", function () {
+      persistHistory(loadHistory().filter(function (itemRecord) {
+        return itemRecord.id !== record.id;
+      }));
+      renderHistoryList();
+      setStatus("已删除一条生成历史");
+    });
+
+    actions.append(regenerateButton, deleteButton);
+    item.append(loadButton, actions);
+    list.appendChild(item);
+  });
+}
+
+async function getDemoManifest() {
+  if (demoManifest) return demoManifest;
+  demoManifest = [{
+    name: EMBEDDED_MODEL.name || "Brick Model",
+    summary: EMBEDDED_MODEL.description || "Interactive brick model",
+    file: "embedded",
+    default: true
+  }];
+  return demoManifest;
+}
+
+async function loadDemoModel(entry, shouldAnimate) {
+  const spec = validateModelCode(EMBEDDED_MODEL);
+  const count = ALLOWED_COUNTS.includes(spec.requestedBrickCount)
+    ? spec.requestedBrickCount
+    : TOP_DETAIL_COUNT;
+  await renderSpec(spec, count, shouldAnimate);
+  document.title = spec.name + " · Interactive Brick Model";
+  document.getElementById("viewerModelName").textContent = spec.name;
+  document.getElementById("viewerModelDescription").textContent = spec.description;
+  document.getElementById("viewerStats").textContent =
+    count.toLocaleString("zh-CN") + " 块积木 · " + spec.primitives.length + " 个造型体";
+  document.getElementById("keyword").value = spec.keyword || spec.name;
+  setStatus("模型已就绪 · " + spec.name);
+  return spec;
+}
+
+async function renderDemoList() {
+  const list = document.getElementById("demoList");
+  list.textContent = "正在读取示例库…";
+  try {
+    const entries = await getDemoManifest();
+    list.replaceChildren();
+    entries.forEach(function (entry) {
+      const button = document.createElement("button");
+      button.className = "demoLoad";
+      button.type = "button";
+      const title = document.createElement("strong");
+      title.textContent = entry.name;
+      const summary = document.createElement("span");
+      summary.textContent = entry.summary || "高精度 3D 积木示例";
+      const tag = document.createElement("span");
+      tag.className = "demoTag";
+      tag.textContent = entry.default ? "默认示例 · 16,000 块" : "点击载入 · 16,000 块";
+      button.append(title, summary, tag);
+      button.addEventListener("click", async function () {
+        document.getElementById("demoDialog").close();
+        setStatus("正在载入示例模型…", "busy");
+        try {
+          await loadDemoModel(entry, true);
+        } catch (error) {
+          setStatus("示例载入失败：" + error.message, "error");
+        }
+      });
+      list.appendChild(button);
+    });
+  } catch (error) {
+    list.textContent = "示例库读取失败：" + error.message;
+  }
+}
+
+function openSettings() {
+  const config = loadConfig();
+  document.getElementById("apiBaseUrl").value = config.baseUrl;
+  document.getElementById("apiModel").value = config.model;
+  document.getElementById("apiKey").value = config.apiKey;
+  document.getElementById("settingsDialog").showModal();
+}
+
+function buildPrompt(keyword, count) {
+  const topDetail = count === TOP_DETAIL_COUNT;
+  const detailBudget = topDetail ? "56 到 72" : "32 到 48";
+  const countRule = topDetail
+    ? "当前是“顶格精细模式”：不受积木数量约束。不要为了节省积木而删除结构或标志性细节，优先把原型复刻准确。"
+    : "网页最终会自动体素化为精确 " + count + " 块积木；你不需要输出逐块坐标，但造型复杂度要与这个规模匹配。";
+  return [
+    "你是一位擅长角色、机甲、载具和工业造型的高级 3D 重建设计师。",
+    "任务：根据关键词“" + keyword + "”，尽量复刻大众最熟悉、最具代表性的原型，而不是制作一个只有同类特征的泛化模型。",
+    countRule,
+    "",
+    "在输出前请在内部完成以下检查，但不要输出分析过程：",
+    "1. 确定“" + keyword + "”最常见的经典版本、正面轮廓、侧面轮廓、长宽高比例和主色分布。",
+    "2. 列出至少 6 个一眼能认出该原型的标志性特征，并确保每个特征都落实为造型体。",
+    "3. 检查头身比例、轮距、翼展、肩宽、驾驶舱位置等关键比例，避免变成普通机器人、普通汽车或普通飞船。",
+    "4. 从正面、侧面、45 度角三个方向检查辨识度，并修正过于方正、过于圆润或结构缺失的问题。",
+    "",
+    "复刻优先级从高到低：整体剪影与比例 > 标志性部件 > 结构分层 > 经典配色 > 小装饰。",
+    "例如，机甲应明确实现头部冠饰、面罩、胸甲、肩甲、前臂、裙甲、背包和脚部轮廓；",
+    "汽车机器人应明确实现车头胸甲、车窗、车轮、车门翼、机械面部、四肢车身零件和原型配色。",
+    "这些只是质量标准，请根据实际关键词选择真正对应的特征，不要机械套用例子。",
+    "",
+    "只返回一个紧凑的 JSON 对象，不要 Markdown、解释、注释或代码围栏。",
+    "",
+    "JSON 格式：",
+    "{",
+    "  \"version\": \"1.0\",",
+    "  \"name\": \"模型的简短中文名\",",
+    "  \"description\": \"一句中文造型描述\",",
+    "  \"subjectClass\": \"humanoid_robot|vehicle|creature|building|object 之一\",",
+    "  \"landmarks\": [\"至少六个原型标志性特征\"],",
+    "  \"qualitySelfCheck\": {\"primitiveCount\":0,\"geometryTypeCount\":0,\"boxRatio\":0,\"rotatedCount\":0,\"subtractCount\":0,\"materialCount\":0,\"topThreeVolumeRatio\":0,\"dominantMaterialRatio\":0,\"landmarkCount\":0,\"namedPartRatio\":0,\"uniquePartCount\":0,\"passed\":true},",
+    "  \"palette\": [\"#RRGGBB\", \"#RRGGBB\"],",
+    "  \"primitives\": [ ... ]",
+    "}",
+    "",
+    "坐标约定：x 左右，y 上下，z 前后，正面朝 +z；模型以原点为中心并保持直立。",
+    "建议人形高度 70 到 100、载具最长边 70 到 110，其他轴按原型真实比例设置，不要把三个轴做得一样大。",
+    "可用造型体仅限：",
+    "1. box: {\"type\":\"box\",\"op\":\"add|subtract\",\"center\":[x,y,z],\"size\":[宽,高,深],\"rotation\":[x度,y度,z度],\"material\":0}",
+    "2. ellipsoid: 字段与 box 相同，size 是完整直径",
+    "3. cylinder: {\"type\":\"cylinder\",\"op\":\"add|subtract\",\"center\":[x,y,z],\"radius\":数值,\"height\":数值,\"axis\":\"x|y|z\",\"rotation\":[x度,y度,z度],\"material\":0}",
+    "4. cone: {\"type\":\"cone\",\"op\":\"add|subtract\",\"center\":[x,y,z],\"radiusTop\":数值,\"radiusBottom\":数值,\"height\":数值,\"axis\":\"x|y|z\",\"rotation\":[x度,y度,z度],\"material\":0}",
+    "5. capsule: {\"type\":\"capsule\",\"op\":\"add|subtract\",\"start\":[x,y,z],\"end\":[x,y,z],\"radius\":数值,\"material\":0}",
+    "6. torus: {\"type\":\"torus\",\"op\":\"add|subtract\",\"center\":[x,y,z],\"majorRadius\":环半径,\"minorRadius\":管半径,\"axis\":\"x|y|z\",\"rotation\":[x度,y度,z度],\"material\":0}",
+    "7. frustum: {\"type\":\"frustum\",\"op\":\"add|subtract\",\"center\":[x,y,z],\"bottomSize\":[底宽,底深],\"topSize\":[顶宽,顶深],\"height\":高度,\"rotation\":[x度,y度,z度],\"material\":0}",
+    "每个 primitive 还必须包含 \"part\":\"语义部件名\"，例如 head_visor、left_shoulder、chest_window、right_forearm_cannon。",
+    "",
+    "建模规则：",
+    "- 使用 " + detailBudget + " 个造型体。不要凑数；每个造型体必须承担轮廓、结构、颜色或细节作用。",
+    "- 顶格模式硬指标：至少 5 类几何、至少 12 个非零 rotation、至少 3 个 subtract；box 不得超过总数的 55%。",
+    "- 已验证的成功基准使用 64 个造型体：27 box、17 cylinder、9 frustum、4 torus、4 capsule、2 cone、1 ellipsoid；其中 35 个部件有旋转，3 个挖空。请达到相近的结构丰富度，不要照抄其具体造型。",
+    "- 先用 6 到 12 个大造型体锁定准确剪影和比例，再用中型部件拆出结构，最后加入标志性细节和颜色覆盖层。",
+    "- 人形或机器人建议按部件预算拆分：头部 8 到 12 个、胸背 12 到 18 个、双臂合计 12 到 18 个、腰胯 4 到 8 个、双腿合计 14 到 20 个、武器或标志附件 4 到 10 个。",
+    "- 绝对不要用一个大 box 代表整个躯干、整条手臂或整条腿。每个主要肢体至少由关节、内骨架、外装甲和标志性覆盖层共同组成。",
+    "- 同一主要部件优先用 2 到 4 个相交造型体做出收腰、斜面、护甲叠层和前后厚度，不要所有部位都使用无旋转方盒。",
+    "- frustum 适合胸甲、肩甲、裙甲、车头、引擎罩等带收分的硬表面；torus 适合车轮、环形推进器和圆形结构。",
+    "- capsule 适合倾斜肢体和连杆；ellipsoid 适合驾驶舱、头盔和圆滑外壳；box 适合机械装甲但要配合 rotation 和 frustum。",
+    "- 使用 subtract 雕出车窗、面罩缝、进气口、轮拱、炮口、关节空隙和机身凹槽，而不是只堆实体。",
+    "- 后面的 add 可以覆盖前面的颜色，因此每个区域必须按“主体 add → 凹槽 subtract → 薄细节 add”的顺序排列。",
+    "- 禁止在眼睛、面罩、车窗、胸口标识或灯组之后再添加覆盖整个头部或躯干的大实体；末尾颜色覆盖层至少有一个维度必须很薄。",
+    "- 用薄而相交的造型体制作眼睛、车窗、胸口标识、灯组和经典色块，但厚度必须足以通过体素化。",
+    "- 左右对称部件必须镜像中心坐标，尺寸与旋转角保持对应；非对称特征只在原型确实存在时加入。",
+    "- 所有部件必须相交或可靠连接，不能出现漂浮的眼睛、车轮、武器或装饰。",
+    "- palette 使用 4 到 10 个原型经典颜色，material 必须是 palette 的有效下标。",
+    "- 任何单一颜色都不应粗暴覆盖超过约 70% 的总体积；深色关节、机械内构、玻璃、灯光和主装甲需要形成清楚层次。",
+    "- 不要把重要特征缩得过薄，以免体素化后消失；细节的最小厚度建议为整体最长边的 2% 到 4%。",
+    "- landmarks 中的每一项必须至少对应一个明确的 part；至少 90% 的 primitives 必须填写非空 part，且顶格模式至少有 10 组不同 part。",
+    "- 数组顺序就是布尔运算顺序。不要输出 schema 之外的类型，不要输出 NaN、表达式或 JavaScript。",
+    "- 输出前最后自检：如果只看纯黑剪影和主色块，是否仍能认出“" + keyword + "”？如果不能，继续修正后再输出。",
+    "",
+    "返回前必须执行与网页完全相同的数值自检，并把真实结果写入 qualitySelfCheck：",
+    "- primitiveCount >= 48；geometryTypeCount >= 5；boxRatio = box 数量 / primitiveCount <= 0.62。",
+    "- rotatedCount >= max(10, ceil(primitiveCount * 0.22))；subtractCount >= 2；materialCount >= 4。",
+    "- landmarkCount >= 6；namedPartRatio >= 0.90；uniquePartCount >= 10。",
+    "- 只统计 op=add 的近似体积。box=w*h*d；ellipsoid=π/6*w*h*d；cylinder=π*r²*h；",
+    "  cone=π*h/3*(rt²+rt*rb+rb²)；capsule=π*r²*线段长度+4π*r³/3；",
+    "  torus=2π²*majorRadius*minorRadius²；frustum=h/3*(底面积+顶面积+sqrt(底面积*顶面积))。",
+    "- topThreeVolumeRatio = 最大三个 add 体积之和 / 全部 add 体积之和，必须 <= 0.58。",
+    "- dominantMaterialRatio = 同一 material 的 add 体积和的最大值 / 全部 add 体积之和，必须 <= 0.72。",
+    "- 先计算再判断。任何一项失败都必须在返回前调整 primitives 并重新计算，只有全部通过才能填写 \"passed\":true。",
+    "- 不要为了降低比率机械切分重叠的大方盒；应真正增加斜面、关节、内构、凹槽和原型标志部件。",
+    "- 为减少截断，请输出紧凑 JSON，rotation 为零时仍可保留 [0,0,0]，不要添加无关字段。"
+  ].join("\n");
+}
+
+async function requestModelCode(keyword, count, config, qualityFeedback) {
+  const controller = new AbortController();
+  const timeout = setTimeout(function () { controller.abort(); }, 150000);
+  try {
+    const messages = [
+      {
+        role: "system",
+        content: "你是追求原型辨识度的 3D 重建专家。必须先在内部核对经典轮廓、比例、标志性结构和配色，再输出符合用户 schema 的严格 JSON。禁止用普通同类物体敷衍关键词；不要输出 Markdown、分析过程或可执行 JavaScript。硬性数量和结构指标不是建议，必须全部满足。"
+      },
+      { role: "user", content: buildPrompt(keyword, count) }
+    ];
+    if (Array.isArray(qualityFeedback) && qualityFeedback.length) {
+      messages.push({
+        role: "user",
+        content: [
+          "上一版方案未通过本地质量验收，请完全重新设计，不要只做局部修改。",
+          "未通过原因：",
+          qualityFeedback.map(function (issue, index) {
+            return (index + 1) + ". " + issue;
+          }).join("\n"),
+          "重新输出完整 JSON，并逐项满足原始提示词中的硬指标。不要解释。"
+        ].join("\n")
+      });
+    }
+    const response = await fetch(endpointFromBaseUrl(config.baseUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + config.apiKey
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: messages,
+        temperature: 0.35
+      }),
+      signal: controller.signal
+    });
+
+    const payload = await response.json().catch(function () { return null; });
+    if (!response.ok) {
+      const detail = payload && payload.error && payload.error.message
+        ? payload.error.message
+        : "HTTP " + response.status;
+      throw new Error("API 请求失败：" + detail);
+    }
+    let content = payload && payload.choices && payload.choices[0] &&
+      payload.choices[0].message && payload.choices[0].message.content;
+    if (Array.isArray(content)) {
+      content = content.map(function (part) { return part.text || ""; }).join("");
+    }
+    if (content && typeof content === "object") return content;
+    if (typeof content !== "string" || !content.trim()) throw new Error("大模型没有返回模型代码");
+
+    const firstBrace = content.indexOf("{");
+    const lastBrace = content.lastIndexOf("}");
+    if (firstBrace < 0 || lastBrace <= firstBrace) throw new Error("返回内容中没有找到 JSON 模型代码");
+    try {
+      return JSON.parse(content.slice(firstBrace, lastBrace + 1));
+    } catch (error) {
+      throw new Error("大模型返回的 JSON 无法解析，请重试");
+    }
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("API 请求超时，请检查地址或稍后重试");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function safeFileName(value) {
+  const cleaned = value.trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-");
+  return (cleaned || "lego-model").slice(0, 60);
+}
+
+function downloadModelCode(spec) {
+  const content = JSON.stringify(spec, null, 2);
+  const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = safeFileName(spec.keyword || spec.name) + "-" + spec.requestedBrickCount + "-bricks.json";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+}
+
+async function generateFromKeyword(options) {
+  const generationOptions = options && options.forceApi ? options : {};
+  const generationCount = TOP_DETAIL_COUNT;
+  setSelectedCount(generationCount);
+  const keyword = document.getElementById("keyword").value.trim();
+  if (!keyword) {
+    setStatus("请先输入想搭建的形象", "error");
+    document.getElementById("keyword").focus();
+    return;
+  }
+  const config = loadConfig();
+  if (!config.model) {
+    setStatus("请先完成 API 设置", "error");
+    openSettings();
+    return;
+  }
+
+  if (!generationOptions.forceApi) {
+    const historyMatch = findHistoryMatch(keyword, config.model);
+    if (historyMatch) {
+      setStatus("检测到同关键词、同模型的历史记录，正在本地载入…", "busy");
+      try {
+        const historicalSpec = validateModelCode(historyMatch.spec);
+        const historicalCount = ALLOWED_COUNTS.includes(Number(historyMatch.brickCount))
+          ? Number(historyMatch.brickCount)
+          : historicalSpec.requestedBrickCount;
+        await renderSpec(historicalSpec, historicalCount, true);
+        setStatus("已自动命中历史记录 · 本次未调用 API");
+      } catch (error) {
+        setStatus("匹配到的历史记录无法载入，请删除该记录或点击“重新生成”", "error");
+      }
+      return;
+    }
+  }
+
+  const button = document.getElementById("btnGenerate");
+  button.disabled = true;
+  button.textContent = "生成中…";
+
+  if (!config.baseUrl || !config.apiKey) {
+    button.disabled = false;
+    button.textContent = "生成模型";
+    setStatus("请补全 API 设置", "error");
+    openSettings();
+    return;
+  }
+
+  setStatus(
+    generationOptions.forceApi
+      ? "正在根据历史诊断重新生成 · 本次调用 1 次 API…"
+      : "正在请求 " + config.model + " 编写造型代码 · 本次调用 1 次 API…",
+    "busy"
+  );
+  try {
+    const raw = await requestModelCode(
+      keyword,
+      generationCount,
+      config,
+      Array.isArray(generationOptions.qualityFeedback) ? generationOptions.qualityFeedback : []
+    );
+    raw.keyword = keyword;
+    raw.requestedBrickCount = generationCount;
+    raw.generatedAt = new Date().toISOString();
+    raw.generatorVersion = GENERATOR_VERSION;
+    const spec = validateModelCode(raw);
+    const quality = assessModelQuality(spec, generationCount, true);
+    downloadModelCode(spec);
+    await renderSpec(spec, generationCount, true);
+    const historySaved = addHistoryRecord(
+      spec,
+      config.model,
+      quality,
+      generationOptions.regeneratedFrom
+    );
+    if (!historySaved) {
+      setStatus("模型已下载并展示，但本地历史空间不足", "error");
+    } else if (quality.issues.length) {
+      setStatus(
+        "模型已展示并存入历史 · 检查出 " + quality.issues.length + " 个问题，可由你决定是否重新生成",
+        "error"
+      );
+    } else {
+      setStatus("生成完成 · 质量检查通过，已下载并加入历史");
+    }
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message || "生成失败，请重试", "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = "生成模型";
+  }
+}
+
+document.getElementById("btnGenerate").addEventListener("click", function () {
+  generateFromKeyword();
+});
+document.getElementById("keyword").addEventListener("keydown", function (event) {
+  if (event.key === "Enter") generateFromKeyword();
+});
+document.getElementById("btnSettings").addEventListener("click", openSettings);
+document.getElementById("btnDemos").addEventListener("click", function () {
+  renderDemoList();
+  document.getElementById("demoDialog").showModal();
+});
+document.getElementById("btnHistory").addEventListener("click", function () {
+  renderHistoryList();
+  document.getElementById("historyDialog").showModal();
+});
+document.getElementById("closeSettings").addEventListener("click", function () {
+  document.getElementById("settingsDialog").close();
+});
+document.getElementById("closeHistory").addEventListener("click", function () {
+  document.getElementById("historyDialog").close();
+});
+document.getElementById("doneHistory").addEventListener("click", function () {
+  document.getElementById("historyDialog").close();
+});
+document.getElementById("closeDemos").addEventListener("click", function () {
+  document.getElementById("demoDialog").close();
+});
+document.getElementById("doneDemos").addEventListener("click", function () {
+  document.getElementById("demoDialog").close();
+});
+
+const studioToggle = document.getElementById("studioToggle");
+const studioPanel = document.getElementById("studioPanel");
+studioToggle.addEventListener("click", function () {
+  const willOpen = studioToggle.getAttribute("aria-expanded") !== "true";
+  studioToggle.setAttribute("aria-expanded", String(willOpen));
+  studioToggle.setAttribute("aria-label", willOpen ? "收起模型生成面板" : "展开模型生成面板");
+  studioPanel.dataset.mobileOpen = String(willOpen);
+});
+document.getElementById("clearHistory").addEventListener("click", function () {
+  if (!loadHistory().length) return;
+  if (!confirm("确定清空全部生成历史吗？已下载的 JSON 文件不会受影响。")) return;
+  persistHistory([]);
+  renderHistoryList();
+  setStatus("生成历史已清空");
+});
+document.getElementById("settingsForm").addEventListener("submit", function (event) {
+  event.preventDefault();
+  const config = {
+    baseUrl: document.getElementById("apiBaseUrl").value.trim(),
+    model: document.getElementById("apiModel").value.trim(),
+    apiKey: document.getElementById("apiKey").value.trim()
+  };
+  if (!config.baseUrl || !config.model || !config.apiKey) {
+    setStatus("API 设置尚未填写完整", "error");
+    return;
+  }
+  saveConfig(config);
+  document.getElementById("settingsDialog").close();
+  setStatus("API 设置已保存到当前浏览器");
+});
+document.getElementById("clearSettings").addEventListener("click", function () {
+  localStorage.removeItem(CONFIG_KEY);
+  document.getElementById("apiBaseUrl").value = "";
+  document.getElementById("apiModel").value = "";
+  document.getElementById("apiKey").value = "";
+  setStatus("本地 API 设置已清除");
+});
+
+document.getElementById("btnImport").addEventListener("click", function () {
+  document.getElementById("fileInput").click();
+});
+document.getElementById("fileInput").addEventListener("change", async function (event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    const spec = validateModelCode(parsed);
+    const count = ALLOWED_COUNTS.includes(spec.requestedBrickCount) ? spec.requestedBrickCount : selectedCount;
+    await renderSpec(spec, count, true);
+    setStatus("已载入本地模型代码：" + file.name);
+  } catch (error) {
+    setStatus("载入失败：" + error.message, "error");
+  } finally {
+    event.target.value = "";
+  }
+});
+
+const slider = document.getElementById("progress");
+const stateText = document.getElementById("stateText");
+const assembleButton = document.getElementById("btnAssemble");
+const explodeButton = document.getElementById("btnExplode");
+const scatterSelect = document.getElementById("scatterShape");
+
+try {
+  const savedScatterMode = localStorage.getItem(SCATTER_KEY);
+  if (SCATTER_LABELS[savedScatterMode]) scatterMode = savedScatterMode;
+} catch (error) {
+  scatterMode = "ring";
+}
+scatterSelect.value = scatterMode;
+
+function updatePlaybackButtons() {
+  let mode = null;
+  if (autoProgress) mode = targetProgress === 1 ? "assemble" : "explode";
+  else if (progressValue >= 0.999) mode = "assemble";
+  else if (progressValue <= 0.001) mode = "explode";
+
+  const assembling = mode === "assemble";
+  const exploding = mode === "explode";
+  assembleButton.setAttribute("aria-pressed", String(assembling));
+  explodeButton.setAttribute("aria-pressed", String(exploding));
+}
+
+assembleButton.addEventListener("click", function () {
+  autoProgress = true;
+  targetProgress = 1;
+  needsMatrixUpdate = true;
+  updatePlaybackButtons();
+});
+explodeButton.addEventListener("click", function () {
+  autoProgress = true;
+  targetProgress = 0;
+  needsMatrixUpdate = true;
+  updatePlaybackButtons();
+});
+document.getElementById("chkRotate").addEventListener("change", function (event) {
+  controls.autoRotate = event.target.checked;
+});
+scatterSelect.addEventListener("change", function () {
+  scatterMode = SCATTER_LABELS[scatterSelect.value] ? scatterSelect.value : "ring";
+  scatterSelect.value = scatterMode;
+  needsMatrixUpdate = true;
+  try {
+    localStorage.setItem(SCATTER_KEY, scatterMode);
+  } catch (error) {
+    console.warn("无法保存解体形态偏好", error);
+  }
+  setStatus("解体形态已切换为" + SCATTER_LABELS[scatterMode]);
+});
+slider.addEventListener("input", function () {
+  autoProgress = false;
+  progressValue = Number(slider.value) / 1000;
+  needsMatrixUpdate = true;
+  updatePlaybackButtons();
+});
+
+function refreshUI() {
+  if (autoProgress) slider.value = Math.round(progressValue * 1000);
+  updatePlaybackButtons();
+  if (progressValue >= 0.999) {
+    stateText.textContent = "组装完成 · " + (currentSpec ? currentSpec.name : "模型") + " 就绪";
+  } else if (progressValue <= 0.001) {
+    stateText.textContent = SCATTER_LABELS[scatterMode] + " · " +
+      selectedCount.toLocaleString("zh-CN") + " 块积木待命";
+  } else if (autoProgress && progressValue !== targetProgress) {
+    stateText.textContent = targetProgress === 1
+      ? "组装中 " + Math.round(progressValue * 100) + "%"
+      : "解体中 " + Math.round((1 - progressValue) * 100) + "%";
+  } else {
+    stateText.textContent = "手动调节 " + Math.round(progressValue * 100) + "%";
+  }
+}
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = Math.min(clock.getDelta(), 0.05);
+  elapsed += delta;
+
+  if (started && autoProgress) {
+    const previous = progressValue;
+    if (progressValue < targetProgress) progressValue = Math.min(targetProgress, progressValue + delta / 5.2);
+    if (progressValue > targetProgress) progressValue = Math.max(targetProgress, progressValue - delta / 5.2);
+    if (previous !== progressValue) needsMatrixUpdate = true;
+  }
+  if (progressValue < 0.999) needsMatrixUpdate = true;
+  updateInstances();
+  controls.update();
+  renderer.render(scene, camera);
+  refreshUI();
+}
+
+addEventListener("resize", function () {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+const urlProgress = new URLSearchParams(location.search).get("p");
+if (urlProgress !== null) {
+  progressValue = targetProgress = clamp(parseFloat(urlProgress) || 0, 0, 1);
+  autoProgress = true;
+}
+
+window.__brickMorph = window.__brickForge = {
+  validateModelCode: validateModelCode,
+  buildExactBrickSet: buildExactBrickSet,
+  getCurrentSpec: function () { return currentSpec; },
+  setProgress: function (value) {
+    progressValue = targetProgress = clamp(Number(value) || 0, 0, 1);
+    needsMatrixUpdate = true;
+  }
+};
+
+updateHistoryCount();
+getDemoManifest().then(function (entries) {
+  const initialDemo = entries.find(function (entry) { return entry.default; }) || entries[0];
+  return loadDemoModel(initialDemo, urlProgress === null);
+}).then(function () {
+  updateInstances();
+  animate();
+  const loading = document.getElementById("loading");
+  loading.style.opacity = "0";
+  setTimeout(function () { loading.remove(); }, 550);
+  setTimeout(function () { started = true; }, 950);
+}).catch(function (error) {
+  document.querySelector(".loaderMark span:last-child").textContent = error.message;
+  console.error(error);
+});
+</script>
+</body>
+</html>
