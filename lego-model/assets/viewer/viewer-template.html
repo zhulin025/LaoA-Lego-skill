@@ -479,7 +479,7 @@
   <p id="modelDescription">从示例库读取高精度模型数据。</p>
   <div class="modelStat">
     <span><strong id="brickCount">16,000</strong>块积木 · 顶格</span>
-    <span><strong id="primitiveCount">0</strong>个造型体</span>
+    <span><strong id="primitiveCount">0</strong><span id="structureUnit">个造型体</span></span>
     <span>实例化渲染</span>
   </div>
 
@@ -714,11 +714,32 @@ function validateModelCode(input) {
     return value;
   });
 
-  if (!Array.isArray(input.primitives) || input.primitives.length < 1 || input.primitives.length > 80) {
-    throw new Error("primitives 需要包含 1 到 80 个造型体");
+  const explicitMode = input.format === "explicit-bricks-v1";
+  let bricks = null;
+  if (explicitMode) {
+    if (!Array.isArray(input.bricks) || input.bricks.length < 1 || input.bricks.length > 150000) {
+      throw new Error("explicit-bricks-v1 的 bricks 需要包含 1 到 150,000 个颗粒");
+    }
+    const occupied = new Set();
+    bricks = input.bricks.map(function (source, index) {
+      if (!Array.isArray(source) || source.length !== 4) {
+        throw new Error("第 " + (index + 1) + " 个显式颗粒必须是 [x,y,z,material]");
+      }
+      const position = asVector(source.slice(0, 3), 3, "bricks[" + index + "]");
+      const material = Number(source[3]);
+      if (!Number.isInteger(material) || material < 0 || material >= palette.length) {
+        throw new Error("第 " + (index + 1) + " 个显式颗粒的 material 无效");
+      }
+      const key = position.join("|");
+      if (occupied.has(key)) throw new Error("显式颗粒存在重复坐标：" + key);
+      occupied.add(key);
+      return { x: position[0], y: position[1], z: position[2], material: material };
+    });
+  } else if (!Array.isArray(input.primitives) || input.primitives.length < 1 || input.primitives.length > 80) {
+    throw new Error("primitives 需要包含 1 到 80 个造型体，或使用 explicit-bricks-v1");
   }
 
-  const primitives = input.primitives.map(function (source, index) {
+  const primitives = explicitMode ? [] : input.primitives.map(function (source, index) {
     if (!source || typeof source !== "object") throw new Error("第 " + (index + 1) + " 个造型体无效");
     const type = String(source.type || "");
     if (!allowedTypes.has(type)) throw new Error("不支持造型体类型：" + type);
@@ -771,7 +792,7 @@ function validateModelCode(input) {
     return primitive;
   });
 
-  if (!primitives.some(function (primitive) { return primitive.op === "add"; })) {
+  if (!explicitMode && !primitives.some(function (primitive) { return primitive.op === "add"; })) {
     throw new Error("模型至少需要一个 add 造型体");
   }
 
@@ -800,6 +821,7 @@ function validateModelCode(input) {
     : [];
   return {
     version: "1.0",
+    format: explicitMode ? "explicit-bricks-v1" : "primitives-v1",
     name: String(input.name || "未命名模型").trim().slice(0, 80) || "未命名模型",
     description: String(input.description || "由 AI 生成的乐高造型").trim().slice(0, 180),
     subjectClass: String(input.subjectClass || "").trim().slice(0, 40),
@@ -807,7 +829,8 @@ function validateModelCode(input) {
     qualitySelfCheck: qualitySelfCheck,
     palette: palette,
     primitives: primitives,
-    requestedBrickCount: ALLOWED_COUNTS.includes(requested) ? requested : selectedCount,
+    bricks: bricks,
+    requestedBrickCount: explicitMode ? bricks.length : ALLOWED_COUNTS.includes(requested) ? requested : selectedCount,
     keyword: String(input.keyword || "").trim().slice(0, 48),
     generatedAt: input.generatedAt || null,
     generatorVersion: String(input.generatorVersion || "").trim().slice(0, 40)
@@ -859,6 +882,19 @@ function primitiveVolume(primitive) {
 }
 
 function assessModelQuality(spec, count, requireSemanticMetadata) {
+  if (spec.format === "explicit-bricks-v1") {
+    const materialCount = new Set(spec.bricks.map(function (brick) { return brick.material; })).size;
+    const issues = [];
+    if (spec.bricks.length < 1000) issues.push("显式颗粒少于 1,000，细节密度不足");
+    if (materialCount < 4) issues.push("显式颗粒只使用了 " + materialCount + " 种颜色");
+    if (requireSemanticMetadata && spec.landmarks.length < 6) {
+      issues.push("landmarks 只有 " + spec.landmarks.length + " 项，至少需要 6 项原型特征");
+    }
+    return {
+      issues: issues,
+      metrics: { format: "explicit-bricks-v1", brickCount: spec.bricks.length, materialCount: materialCount, primitiveCount: 0 }
+    };
+  }
   const topDetail = count === TOP_DETAIL_COUNT;
   const primitives = spec.primitives;
   const added = primitives.filter(function (primitive) { return primitive.op === "add"; });
@@ -1369,7 +1405,7 @@ function createRenderModel(spec, bricks) {
   const tornado = new Float32Array(count * 4);
   const tumble = new Float32Array(count * 6);
   const misc = new Float32Array(count * 3);
-  const seed = hashString(spec.name + "|" + count + "|" + spec.primitives.length);
+  const seed = hashString(spec.name + "|" + count + "|" + (spec.bricks ? spec.bricks.length : spec.primitives.length));
   const random = mulberry32(seed);
   let maxDistance = 0.001;
 
@@ -1542,19 +1578,27 @@ function setSelectedCount(count) {
 }
 
 function renderSpec(spec, count, shouldAnimate) {
-  setStatus("正在本地展开 " + count.toLocaleString("zh-CN") + " 块积木…", "busy");
+  const explicit = spec.format === "explicit-bricks-v1";
+  const renderCount = explicit ? spec.bricks.length : count;
+  setStatus(
+    explicit
+      ? "正在载入 " + renderCount.toLocaleString("zh-CN") + " 块显式微颗粒…"
+      : "正在本地展开 " + renderCount.toLocaleString("zh-CN") + " 块积木…",
+    "busy"
+  );
   return new Promise(function (resolve, reject) {
     requestAnimationFrame(function () {
       try {
-        const result = buildExactBrickSet(spec, count);
+        const result = explicit ? { bricks: spec.bricks } : buildExactBrickSet(spec, renderCount);
         createRenderModel(spec, result.bricks);
         currentSpec = spec;
-        selectedCount = count;
-        setSelectedCount(count);
+        selectedCount = renderCount;
+        setSelectedCount(renderCount);
         document.getElementById("modelName").textContent = spec.name;
         document.getElementById("modelDescription").textContent = spec.description;
-        document.getElementById("brickCount").textContent = count.toLocaleString("zh-CN");
-        document.getElementById("primitiveCount").textContent = spec.primitives.length;
+        document.getElementById("brickCount").textContent = renderCount.toLocaleString("zh-CN");
+        document.getElementById("primitiveCount").textContent = explicit ? spec.bricks.length.toLocaleString("zh-CN") : spec.primitives.length;
+        document.getElementById("structureUnit").textContent = explicit ? "个显式颗粒" : "个造型体";
         progressValue = shouldAnimate ? 0 : 1;
         targetProgress = 1;
         autoProgress = true;
@@ -1834,7 +1878,9 @@ async function getDemoManifest() {
 
 async function loadDemoModel(entry, shouldAnimate) {
   const spec = validateModelCode(EMBEDDED_MODEL);
-  const count = ALLOWED_COUNTS.includes(spec.requestedBrickCount)
+  const count = spec.format === "explicit-bricks-v1"
+    ? spec.bricks.length
+    : ALLOWED_COUNTS.includes(spec.requestedBrickCount)
     ? spec.requestedBrickCount
     : TOP_DETAIL_COUNT;
   await renderSpec(spec, count, shouldAnimate);
@@ -2234,7 +2280,9 @@ document.getElementById("fileInput").addEventListener("change", async function (
   try {
     const parsed = JSON.parse(await file.text());
     const spec = validateModelCode(parsed);
-    const count = ALLOWED_COUNTS.includes(spec.requestedBrickCount) ? spec.requestedBrickCount : selectedCount;
+    const count = spec.format === "explicit-bricks-v1"
+      ? spec.bricks.length
+      : ALLOWED_COUNTS.includes(spec.requestedBrickCount) ? spec.requestedBrickCount : selectedCount;
     await renderSpec(spec, count, true);
     setStatus("已载入本地模型代码：" + file.name);
   } catch (error) {

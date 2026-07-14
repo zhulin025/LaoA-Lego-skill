@@ -139,6 +139,52 @@ def validate_schema(model: Any) -> list[dict[str, Any]]:
     return validated
 
 
+def validate_explicit_schema(model: Any) -> list[list[float | int]]:
+    if not isinstance(model, dict):
+        raise ModelError("root value must be an object")
+    if model.get("version") != "1.0":
+        raise ModelError('version must be "1.0"')
+    if model.get("format") != "explicit-bricks-v1":
+        raise ModelError('format must be "explicit-bricks-v1"')
+    palette = model.get("palette")
+    if not isinstance(palette, list) or not 1 <= len(palette) <= 12:
+        raise ModelError("palette must contain 1 to 12 colors")
+    for index, color in enumerate(palette):
+        if not isinstance(color, str) or len(color) != 7 or color[0] != "#":
+            raise ModelError(f"palette[{index}] must use #RRGGBB")
+        try:
+            int(color[1:], 16)
+        except ValueError as error:
+            raise ModelError(f"palette[{index}] must use #RRGGBB") from error
+    if model.get("subjectClass") not in ALLOWED_CLASSES:
+        raise ModelError(f"subjectClass must be one of {sorted(ALLOWED_CLASSES)}")
+    source = model.get("bricks")
+    if not isinstance(source, list) or not 1 <= len(source) <= 150_000:
+        raise ModelError("bricks must contain 1 to 150000 entries")
+    validated: list[list[float | int]] = []
+    occupied: set[tuple[float, float, float]] = set()
+    for index, item in enumerate(source):
+        if not isinstance(item, list) or len(item) != 4:
+            raise ModelError(f"bricks[{index}] must be [x, y, z, material]")
+        position = [number(item[axis], f"bricks[{index}][{axis}]") for axis in range(3)]
+        if any(abs(value) > 240 for value in position):
+            raise ModelError(f"bricks[{index}] coordinate magnitude must be <= 240")
+        material = item[3]
+        if isinstance(material, bool) or not isinstance(material, int) or not 0 <= material < len(palette):
+            raise ModelError(f"bricks[{index}][3] must be a valid material index")
+        key = tuple(position)
+        if key in occupied:
+            raise ModelError(f"duplicate brick coordinate at bricks[{index}]")
+        occupied.add(key)
+        validated.append([*position, material])
+    landmarks = model.get("landmarks")
+    if not isinstance(landmarks, list) or any(not isinstance(item, str) or not item.strip() for item in landmarks):
+        raise ModelError("landmarks must be an array of non-empty strings")
+    if model.get("requestedBrickCount") != len(validated):
+        raise ModelError("requestedBrickCount must equal the explicit bricks length")
+    return validated
+
+
 def assess(model: dict[str, Any], primitives: list[dict[str, Any]]) -> tuple[dict[str, Any], list[str]]:
     added = [item for item in primitives if item["op"] == "add"]
     primitive_count = len(primitives)
@@ -203,6 +249,41 @@ def assess(model: dict[str, Any], primitives: list[dict[str, Any]]) -> tuple[dic
     return metrics, issues
 
 
+def assess_explicit(model: dict[str, Any], bricks: list[list[float | int]]) -> tuple[dict[str, Any], list[str]]:
+    material_count = len({int(item[3]) for item in bricks})
+    spans = []
+    for axis in range(3):
+        values = [float(item[axis]) for item in bricks]
+        spans.append(max(values) - min(values))
+    landmarks = model.get("landmarks", [])
+    metrics = {
+        "format": "explicit-bricks-v1",
+        "brickCount": len(bricks),
+        "primitiveCount": 0,
+        "geometryTypeCount": 0,
+        "boxRatio": 0,
+        "rotatedCount": 0,
+        "subtractCount": 0,
+        "materialCount": material_count,
+        "topThreeVolumeRatio": 0,
+        "dominantMaterialRatio": 0,
+        "landmarkCount": len(landmarks),
+        "namedPartRatio": 1,
+        "uniquePartCount": len(landmarks),
+        "boundsSpan": [round(value, 6) for value in spans],
+    }
+    issues = []
+    if len(bricks) < 1000:
+        issues.append(f"brickCount {len(bricks)} is below 1000 for explicit high-detail mode")
+    if material_count < 4:
+        issues.append(f"materialCount {material_count} is below 4")
+    if len(landmarks) < 6:
+        issues.append(f"landmarkCount {len(landmarks)} is below 6")
+    if any(value < 2 for value in spans):
+        issues.append("explicit brick bounds must span at least 2 units on every axis")
+    return metrics, issues
+
+
 def self_check(metrics: dict[str, Any], issues: list[str]) -> dict[str, Any]:
     return {**metrics, "passed": not issues}
 
@@ -210,8 +291,12 @@ def self_check(metrics: dict[str, Any], issues: list[str]) -> dict[str, Any]:
 def check_model(path: Path, *, write: bool, as_json: bool) -> int:
     try:
         model = json.loads(path.read_text(encoding="utf-8"))
-        primitives = validate_schema(model)
-        metrics, issues = assess(model, primitives)
+        if model.get("format") == "explicit-bricks-v1":
+            bricks = validate_explicit_schema(model)
+            metrics, issues = assess_explicit(model, bricks)
+        else:
+            primitives = validate_schema(model)
+            metrics, issues = assess(model, primitives)
     except (OSError, json.JSONDecodeError, ModelError) as error:
         if as_json:
             print(json.dumps({"valid": False, "issues": [str(error)]}, ensure_ascii=False))
@@ -229,17 +314,24 @@ def check_model(path: Path, *, write: bool, as_json: bool) -> int:
     else:
         status = "PASS" if not issues else "FAIL"
         print(f"{status} {path}")
-        print(
-            f"  primitives={metrics['primitiveCount']} types={metrics['geometryTypeCount']} "
-            f"boxes={metrics['boxRatio']:.1%} rotated={metrics['rotatedCount']} "
-            f"subtract={metrics['subtractCount']} materials={metrics['materialCount']}"
-        )
-        print(
-            f"  top3-volume={metrics['topThreeVolumeRatio']:.1%} "
-            f"dominant-material={metrics['dominantMaterialRatio']:.1%} "
-            f"landmarks={metrics['landmarkCount']} named-parts={metrics['namedPartRatio']:.1%} "
-            f"unique-parts={metrics['uniquePartCount']}"
-        )
+        if metrics.get("format") == "explicit-bricks-v1":
+            print(
+                f"  format=explicit-bricks-v1 bricks={metrics['brickCount']} "
+                f"materials={metrics['materialCount']} bounds-span={metrics['boundsSpan']} "
+                f"landmarks={metrics['landmarkCount']}"
+            )
+        else:
+            print(
+                f"  primitives={metrics['primitiveCount']} types={metrics['geometryTypeCount']} "
+                f"boxes={metrics['boxRatio']:.1%} rotated={metrics['rotatedCount']} "
+                f"subtract={metrics['subtractCount']} materials={metrics['materialCount']}"
+            )
+            print(
+                f"  top3-volume={metrics['topThreeVolumeRatio']:.1%} "
+                f"dominant-material={metrics['dominantMaterialRatio']:.1%} "
+                f"landmarks={metrics['landmarkCount']} named-parts={metrics['namedPartRatio']:.1%} "
+                f"unique-parts={metrics['uniquePartCount']}"
+            )
         for issue in issues:
             print(f"  - {issue}")
         if write:

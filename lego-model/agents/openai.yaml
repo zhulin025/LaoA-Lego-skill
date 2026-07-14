@@ -1,4 +1,4 @@
 interface:
   display_name: "LEGO Model"
-  short_description: "Create a brick model and interactive 3D assembly webpage."
-  default_prompt: "Use $lego-model to create a detailed Bumblebee brick model and open its interactive 3D assembly webpage."
+  short_description: "Create editable or reference-faithful micro-brick 3D models."
+  default_prompt: "Use $lego-model to reproduce this reference as a detailed interactive brick-built 3D model."

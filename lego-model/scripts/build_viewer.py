@@ -9,7 +9,14 @@ import shutil
 import sys
 from pathlib import Path
 
-from brick_model import ModelError, assess, self_check, validate_schema
+from brick_model import (
+    ModelError,
+    assess,
+    assess_explicit,
+    self_check,
+    validate_explicit_schema,
+    validate_schema,
+)
 
 
 TOKEN = "__BRICK_MODEL_JSON__"
@@ -23,8 +30,12 @@ def safe_embedded_json(model: dict) -> str:
 def package(model_path: Path, output: Path, *, make_zip: bool, force: bool) -> int:
     try:
         model = json.loads(model_path.read_text(encoding="utf-8"))
-        primitives = validate_schema(model)
-        metrics, issues = assess(model, primitives)
+        if model.get("format") == "explicit-bricks-v1":
+            bricks = validate_explicit_schema(model)
+            metrics, issues = assess_explicit(model, bricks)
+        else:
+            primitives = validate_schema(model)
+            metrics, issues = assess(model, primitives)
     except (OSError, json.JSONDecodeError, ModelError) as error:
         print(f"FAIL {model_path}: {error}", file=sys.stderr)
         return 1
@@ -66,10 +77,12 @@ def package(model_path: Path, output: Path, *, make_zip: bool, force: bool) -> i
     print(f"Model:  {output / 'model.json'}")
     if archive:
         print(f"ZIP:    {archive}")
-    print(
-        f"Quality: {'PASS' if not issues else 'WARNING'} · "
-        f"{metrics['primitiveCount']} primitives · {len(issues)} issue(s)"
+    detail = (
+        f"{metrics['brickCount']} explicit bricks"
+        if metrics.get("format") == "explicit-bricks-v1"
+        else f"{metrics['primitiveCount']} primitives"
     )
+    print(f"Quality: {'PASS' if not issues else 'WARNING'} · {detail} · {len(issues)} issue(s)")
     for issue in issues:
         print(f"  - {issue}")
     return 0

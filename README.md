@@ -10,6 +10,9 @@
 Every run can produce:
 
 - A validated BrickMorph-compatible \`model.json\`.
+- Either compact \`primitives-v1\` geometry or exact \`explicit-bricks-v1\`
+  micro-brick coordinates for reference-faithful faces, mosaics, thin linework,
+  and pixel-sculpted details.
 - A webpage with assembly, disassembly, ring/sphere/tornado scatter layouts,
   orbit, pan, zoom, progress scrubbing, automatic rotation, and theme switching.
 - Local Three.js runtime files, so the viewer does not depend on a CDN.
@@ -49,8 +52,26 @@ parts, then give me the running viewer URL and ZIP.
 \`\`\`
 
 \`\`\`text
+Use $lego-model to reproduce this character reference as a high-detail
+micro-brick model. Keep small facial marks, mouth edges, whiskers, and color
+boundaries accurate.
+\`\`\`
+
+\`\`\`text
 Use $lego-model to improve this existing model.json and package a new viewer.
 \`\`\`
+
+## Model formats
+
+Use \`primitives-v1\` for compact, editable 3D subjects whose identity comes
+from volumes, limbs, armor, vehicle bodies, openings, or mechanical parts. The
+viewer voxelizes those primitives locally into a surface brick model.
+
+Use \`explicit-bricks-v1\` when the result needs direct brick-level control,
+such as a supplied reference image, face, text, mosaic, pixel sculpture, or very
+thin decorative lines. In this mode \`bricks\` is a list of
+\`[x, y, z, material]\` entries and \`requestedBrickCount\` is the exact list
+length. This avoids losing small details during primitive resampling.
 
 ## Validate
 
