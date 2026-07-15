@@ -28,11 +28,11 @@ Primary request: Create a highly recognizable brick-built 3D sculpture of [exact
 Scene/backdrop: clean neutral light-gray studio, unobtrusive ground plane, no environment or props.
 Subject: full body/object fully inside frame, centered, three-quarter front view, facing slightly toward camera.
 Identity locks: [8-12 concrete silhouette, proportion, palette, costume/bodywork, face/front-fascia, and accessory landmarks].
-Construction: visibly assembled from interlocking toy bricks, plates, slopes, wedges, cylinders, and studs; readable brick scale; plausible connected construction; layered depth at the face/front and signature details.
+Construction: visibly assembled from medium-scale interlocking toy bricks, plates, slopes, wedges, cylinders, and studs; use a limited number of readable structural masses rather than a smooth micro-brick skin; show plausible connected construction, layered depth, visible joints, and separate hand/foot components.
 Composition/framing: long-lens or orthographic-like product view with low perspective distortion; all extremities visible; critical landmarks unobstructed.
 Lighting/mood: soft studio lighting that separates every major plane and color block.
 Constraints: preserve the named version, canonical proportions, pose, and color placement; use only accessories explicitly listed.
-Avoid: smooth plastic character render, generic minifigure, action figure, costume, voxel cube style, chibi redesign unless canonical, invented armor or weapons, transformed variants not requested, cropped extremities, duplicate limbs, text, captions, logos, watermark, busy background.
+Avoid: smooth plastic character render, generic minifigure, action figure, costume, continuous micro-brick skin, featureless ball hands, fused mitten hands, ball feet, voxel cube style, chibi redesign unless canonical, invented armor or weapons, transformed variants not requested, cropped extremities, duplicate limbs, text, captions, logos, watermark, busy background.
 ```
 
 For a user-supplied non-brick image, label it as the identity reference and add: `Preserve the reference's identity, silhouette, pose, proportions, color blocking, and signature details; change only the construction into visible interlocking bricks.`
@@ -51,6 +51,8 @@ Accept only when all of these are true:
 6. The pose exposes the parts needed for modeling without severe self-occlusion.
 7. Anatomy or mechanical structure is coherent with no duplicate or missing major parts.
 8. No unrequested accessory, transformation, text, logo, or environment has been invented.
+9. Every visible hand or gripper has a readable palm, thumb, finger/knuckle grouping, and wrist transition; no hand is a featureless sphere or ellipsoid.
+10. Feet, shoes, elbows, knees, and shoulders have readable construction seams instead of melting into adjacent masses.
 
 If one or two checks fail, make one targeted image edit that changes only those defects and preserves the accepted identity features. If the second image still fails a critical identity check, disclose the mismatch instead of treating it as ground truth.
 
@@ -63,6 +65,8 @@ In the brief, record:
 - at least 10 semantic part groups;
 - sampled palette colors and their approximate volume share;
 - visible connections, overlaps, gaps, openings, and depth order;
+- hand construction for each side: palm/fist core, thumb, finger or knuckle blocks, and wrist connection;
+- foot and shoe construction: sole, upper/toe mass, ankle connection, and any canonical strap or armor;
 - assumptions for occluded rear or underside geometry;
 - the chosen representation and why it fits this concept.
 
@@ -77,5 +81,6 @@ Capture an assembled viewer screenshot at a matching three-quarter camera angle.
 3. large canonical color blocks;
 4. depth layering, openings, and overlaps;
 5. face/front-fascia and small signature details.
+6. both hands, both feet, and major joint segmentation at closer zoom.
 
-Count a landmark as matched only when its shape, position, scale, and color role agree with the concept. Require at least 80% total landmark agreement and 100% agreement for critical silhouette landmarks. Spend repair passes on the largest identity mismatch first; extra bricks cannot compensate for a wrong silhouette.
+Count a landmark as matched only when its shape, position, scale, color role, and construction role agree with the concept. Require at least 80% total landmark agreement, 100% agreement for critical silhouette landmarks, and zero featureless ball hands or feet. Spend repair passes on the largest structural mismatch first; extra bricks cannot compensate for a wrong silhouette or collapsed anatomy.

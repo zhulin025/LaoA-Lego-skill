@@ -11,18 +11,20 @@ Write a brief before JSON:
 5. Divide the subject into 10 or more semantic part groups.
 6. Allocate a primitive budget before detailing.
 
-For humanoid robots, a useful 56-72 primitive allocation is: head 8-12, chest/back 12-18, both arms 12-18, waist/hips 4-8, both legs 14-20, and weapons or signature accessories 4-10. Adjust rather than mechanically applying this split.
+For humanoid robots and characters, a useful 64-80 primitive allocation is: head 8-12, chest/back 10-16, both shoulders and arms 10-14, both hands 8-14, waist/hips 4-8, both legs and feet 14-20, and signature accessories 4-10. Adjust rather than mechanically applying this split. Read [articulated-character-modeling.md](articulated-character-modeling.md) before modeling a complete humanoid.
 
 ## Shape strategy
 
 - Start with 6-12 medium structural masses that establish the exact silhouette. Avoid one huge torso or hull primitive.
 - Build each major region from 2-4 intersecting forms that create taper, armor overlap, depth, and directional planes.
 - Prefer `frustum` for chest plates, shoulder armor, skirts, hoods, noses, and engine covers.
-- Prefer `capsule` for angled limbs, struts, tails, and organic connectors.
+- Prefer `capsule` for angled limb connectors, struts, tails, and organic transitions, but do not use one capsule or ellipsoid as a complete hand, fist, or foot.
 - Prefer `ellipsoid` for helmets, canopies, creature bodies, and rounded shells.
 - Prefer `torus` for wheels, ring thrusters, turbines, and circular framing.
 - Use rotated `box` forms for mechanical armor, fins, wings, and panels; do not let axis-aligned boxes define the entire subject.
 - Use `subtract` for openings that change identity: visor slit, grille, intake, wheel arch, cannon bore, joint gap, cockpit recess, or signature groove.
+- Build hands and feet from blocky semantic parts. A clenched fist needs a palm/fist core, thumb, knuckle or finger blocks, and wrist transition; an open hand needs a palm, thumb, and at least two finger groups.
+- Prefer a stepped, readable LEGO construction over a mathematically smooth organic shell. Large visible part boundaries are an asset when they explain anatomy or mechanism.
 
 A proven rich mix at 64 primitives was 27 box, 17 cylinder, 9 frustum, 4 torus, 4 capsule, 2 cone, and 1 ellipsoid, with 35 oriented forms and 3 subtract operations. Treat this as a diversity reference, not a template to copy.
 
@@ -35,6 +37,8 @@ Map every landmark string to explicit `part` names. Examples:
 - A spacecraft needs the actual planform, cockpit position, engine layout, asymmetry, gaps, and surface color zones—not merely a flattened oval.
 
 Review in this order: black silhouette and proportions; landmark placement; depth layering; canonical color blocks; small trim. If the subject is unrecognizable without the filename, revise the silhouette and landmarks before adding decoration.
+
+For humanoids, add a mandatory articulation review after the silhouette pass: inspect both hands, both feet, elbows, knees, shoulders, and neck. Reject featureless spheres, ellipsoids, capsules, or fused mitten shapes even when the overall silhouette is recognizable.
 
 ## Numeric gate
 
@@ -50,6 +54,7 @@ The bundled checker requires:
 - At least 6 landmarks; use 8-12 for stronger identity.
 - At least 90% of primitives have `part`; aim for 100%.
 - At least 10 unique semantic part groups.
+- When hand-related primitive names are present, each modeled side has at least three semantic hand parts and no ellipsoid/capsule named as a whole hand or fist.
 
 Do not satisfy ratios by splitting identical overlapping boxes. Reduce oversized masses and replace them with meaningful tapered armor, joints, structural gaps, recesses, mechanical internals, and signature parts.
 
@@ -71,3 +76,4 @@ When validation fails, fix the underlying form:
 4. Low geometry diversity: choose types that match actual anatomy or industrial form.
 5. Dominant material: expose joints, internals, windows, lights, trim, and secondary armor in canonical colors.
 6. Weak semantic coverage: rename parts by function and implement missing landmarks; do not add empty metadata alone.
+7. Ball hand or fused fist: replace the round mass with a palm/fist core, thumb, knuckle/finger blocks, and wrist transition; then re-check both front and three-quarter views.

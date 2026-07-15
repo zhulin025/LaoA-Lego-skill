@@ -1,6 +1,8 @@
 # Explicit Bricks Schema
 
-Use this format when individual brick coordinates and colors must survive loading without re-voxelization.
+Use this format when individual brick coordinates and colors must survive loading without re-voxelization and the result is primarily planar or coordinate-exact: pixel art, mosaics, text, logos, shallow reliefs, or front-view color maps.
+
+Do not choose it as a universal "high detail" mode for complete humanoids, creatures, or other subjects whose identity depends on articulated three-dimensional anatomy. More surface bricks do not create better hands, feet, joints, or layered construction when the underlying masses are wrong.
 
 ```json
 {
@@ -22,4 +24,3 @@ Use this format when individual brick coordinates and colors must survive loadin
 Each brick entry is `[x, y, z, material]`. Coordinates are finite numbers with absolute value at most 240. `material` is a zero-based palette index. Coordinates must be unique. Use 1-12 colors, 1-150,000 bricks, and make `requestedBrickCount` equal the exact `bricks` length.
 
 Prefer a compact JSON serialization for large files. Preserve the common metadata fields so BrickMorph/lego-falcon can display names, descriptions, landmarks, palette swatches, history, and download filenames consistently.
-
