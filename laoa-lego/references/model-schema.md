@@ -43,6 +43,8 @@ Every primitive requires:
 - `material`: valid palette index. It is ignored visually for subtract operations but remains required.
 - `part`: concise semantic name such as `head_crest`, `left_shoulder_armor`, or `chest_window`.
 
+Use lowercase English `snake_case` part names. For hands, include the side and anatomical role so validation can distinguish articulation, for example `left_palm`, `left_thumb`, `left_finger_block_outer`, and `left_wrist`.
+
 ## Primitive forms
 
 ```json
@@ -71,5 +73,6 @@ Do not add a large body primitive after eyes, windows, or trim if it would cover
 
 - `version` is `1.0`.
 - Use 1-80 primitives; aim for 56-72 in detailed mode.
+- A structured humanoid may use 64-80 primitives when hands, feet, joints, hair, or costume layers need separate parts.
 - Use `requestedBrickCount: 16000` for current BrickMorph top-detail compatibility.
 - Do not emit expressions, `NaN`, comments, JavaScript, Markdown fences, or unrecognized fields in primitive definitions.

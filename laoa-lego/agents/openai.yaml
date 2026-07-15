@@ -1,4 +1,4 @@
 interface:
   display_name: "LaoA-Lego skill"
-  short_description: "Create concept-led interactive brick-built 3D models."
-  default_prompt: "Use $laoa-lego to generate a canonical brick-built concept image first, then build and validate the matching interactive 3D model."
+  short_description: "优先搭建可读结构，生成可组装、可解体的高辨识度三维积木模型。"
+  default_prompt: "使用 $laoa-lego 先生成可实现的积木概念图，再用分段结构完成并验证可交互三维模型。"

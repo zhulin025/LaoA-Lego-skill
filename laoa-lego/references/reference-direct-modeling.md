@@ -1,9 +1,11 @@
 # Reference-Direct Micro-Brick Modeling
 
-Use this workflow when the front-view arrangement of colors carries more identity than the volumetric primitive decomposition.
+Use this workflow only when the deliverable is primarily planar or coordinate-exact and the front-view arrangement of colors carries more identity than volumetric construction: pixel art, mosaics, text, logos, shallow reliefs, or intentionally flat display sculptures.
+
+Do not use this mode for a complete three-dimensional humanoid merely because its face, scars, or costume contain thin lines. Surface-shell sampling tends to smooth hands, feet, joints, and facial depth into rounded masses. Build the character with structured primitives and express small marks as thin add primitives instead.
 
 1. Measure the reference in normalized subject coordinates: silhouette bounds, head/body ratio, limb pose, and feature centers.
-2. Author analytic 3D occupancy for the major masses: ellipsoids for head/body/hands/feet, capsules for limbs, and small dedicated masses for accessories.
+2. Author analytic occupancy for the shallow relief or display volume. Avoid treating hands, feet, or other articulated anatomy as generic ellipsoids; if articulated anatomy is essential, switch to `primitives-v1`.
 3. Sample occupancy on a regular grid. Target at least 70-100 cells across the most detail-critical region, usually the face.
 4. Retain exterior cells by checking the six axial neighbors. Use a filled volume only when the user explicitly needs internal construction.
 5. Assign base material by body region, then paint the visible front surface with ordered masks:

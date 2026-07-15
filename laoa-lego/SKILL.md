@@ -1,6 +1,6 @@
 ---
 name: laoa-lego
-description: Generate a high-recognition LEGO-style brick-built 3D model from a keyword or reference image through a concept-image-first workflow, including reference-faithful explicit micro-brick models for faces, mosaics, pixel sculptures, and thin painted details, then deliver an interactive webpage with assembly, disassembly, scatter, orbit, pan, and zoom. Use for characters, robots, vehicles, creatures, buildings, objects, exact image replication, or validation, repair, conversion, packaging, and preview of BrickMorph JSON.
+description: Generate a high-recognition LEGO-style 3D model from a keyword or reference image through a concept-image-first, structure-first workflow, then deliver an interactive webpage with assembly, disassembly, scatter, orbit, pan, and zoom. Use for characters, robots, vehicles, creatures, buildings, objects, pixel art, mosaics, exact image replication, or validation, repair, conversion, packaging, and preview of BrickMorph JSON.
 ---
 
 # LaoA-Lego skill
@@ -9,45 +9,46 @@ Deliver an interactive 3D webpage, not only model JSON. Use Codex's current mode
 
 ## Generate the modeling concept first
 
-For a keyword-only request, do not jump directly from text to geometry. Read [references/concept-image-workflow.md](references/concept-image-workflow.md), use the built-in image generation tool to create a clean 3D brick-built concept image, and save the accepted image under `<output>/reference/`. This concept image becomes the visual contract for the model.
+For a keyword-only request, read [references/concept-image-workflow.md](references/concept-image-workflow.md), generate a clean brick-built concept image with the built-in image tool, and save the accepted image under `<output>/reference/`. Treat it as the visual contract.
 
-If the user supplies a non-brick reference, preserve it as the identity source and generate a normalized brick-built concept derived from it. If the supplied image is already a clear, full-subject brick-built 3D render, it may serve directly as the concept image. Never replace or contradict a user-supplied identity reference.
+Preserve a supplied identity reference. A clear, full-subject brick-built render may serve directly as the concept. Do not author `model.json` until the concept passes the identity, buildability, articulation, and framing checks.
 
-Do not author `model.json` until the concept passes the landmark and buildability checklist. If built-in image generation is unavailable, do not silently skip this step; disclose the limitation and continue with direct modeling only after the user approves.
+If built-in image generation is unavailable, disclose the limitation and continue with direct modeling only after the user approves; never silently skip the concept gate.
 
-## Choose the representation after the concept image
+## Choose structure before surface detail
 
-Select before modeling:
+Choose the representation after accepting the concept:
 
-- Use `primitives-v1` for editable, compact, fully three-dimensional subjects whose identity comes from silhouette, volume, openings, armor, limbs, or mechanical parts. Read [references/model-schema.md](references/model-schema.md) and [references/modeling-guide.md](references/modeling-guide.md).
-- Use `explicit-bricks-v1` when a supplied reference depends on small facial marks, pixel art, mosaic color boundaries, text, thin linework, or exact front-view color placement; also switch to it when a primitive model remains visibly coarse after one repair. Read [references/explicit-bricks-schema.md](references/explicit-bricks-schema.md) and [references/reference-direct-modeling.md](references/reference-direct-modeling.md).
+- Default to `primitives-v1` for every fully three-dimensional subject, especially characters, humanoids, robots, vehicles, creatures, and objects with limbs, joints, armor, layered hulls, or readable construction seams. Read [references/model-schema.md](references/model-schema.md) and [references/modeling-guide.md](references/modeling-guide.md).
+- For a character or humanoid, also read [references/articulated-character-modeling.md](references/articulated-character-modeling.md). Build hands, feet, joints, hair, clothing, and facial depth as semantic parts. A single sphere, ellipsoid, or capsule is never an acceptable hand, fist, or foot.
+- Use `explicit-bricks-v1` only when the deliverable is primarily planar or coordinate-exact: pixel art, mosaics, text, logos, shallow reliefs, or front-view color maps. Read [references/explicit-bricks-schema.md](references/explicit-bricks-schema.md) and [references/reference-direct-modeling.md](references/reference-direct-modeling.md).
 
-Do not treat a larger requested count as a substitute for the correct representation. Primitive resampling can only refine geometry that already encodes the intended feature.
+Do not switch an entire 3D character to `explicit-bricks-v1` merely for scars, eyes, costume lines, or higher brick count. Express those details as thin add primitives on a structured base. If the format cannot reproduce a tiny mark without destroying anatomy, preserve the anatomy and disclose the tiny-detail limitation.
 
 ## Core workflow
 
-1. Create a dedicated output directory. Use the user's requested path; otherwise use `<safe-subject>-laoa-lego-model/` in the current workspace. Use `models/` only when the current repository requires generated artifacts there.
+1. Create a dedicated output directory. Use the requested path; otherwise use `<safe-subject>-laoa-lego-model/` in the workspace.
 2. Establish the canonical subject:
-   - Prefer the version named by the user.
-   - Treat supplied reference images as primary evidence.
-   - Otherwise research front, side, and three-quarter references when image search is available.
-   - Record silhouette, proportions, palette, and at least 8 unmistakable landmarks in a brief.
-3. Create and accept the modeling concept:
-   - Generate `<output>/reference/concept.png` from the brief with the built-in image generation tool.
-   - Save the final structured prompt as `<output>/reference/concept-prompt.md`.
-   - Reject concepts with the wrong version, missing landmarks, cropped silhouette, duplicated anatomy, smooth non-brick surfaces, or invented accessories. Make one targeted image repair and re-check it; never accept a concept that still fails a critical identity check.
-   - Record any occluded or ambiguous geometry as explicit assumptions in the brief.
-4. Choose the representation from the accepted concept, then author `<output>/model.json`:
-   - For `primitives-v1`, target 56-72 meaningful primitives and `requestedBrickCount: 16000`; build in Boolean order: structural `add`, local `subtract`, then thin color/detail `add`.
-   - For `explicit-bricks-v1`, generate a deterministic surface shell or volume, paint reference-critical regions directly at brick resolution, export unique `[x,y,z,material]` entries, and set `requestedBrickCount` to the exact array length. Keep the result at or below 150,000 bricks.
-   - Map every landmark in the brief to one or more concrete `part` names or explicit-brick regions. Do not invent geometry that contradicts the accepted concept.
-5. Recompute and write the self-check:
+   - prefer the named version and supplied references;
+   - otherwise research authoritative front, side, and three-quarter references when available;
+   - record silhouette, proportions, palette, at least 8 identity landmarks, and 10 or more semantic part groups;
+   - for humanoids, explicitly allocate parts for both palms/fists, thumbs, finger or knuckle blocks, wrists, feet, and shoes.
+3. Generate and accept `<output>/reference/concept.png`:
+   - save the exact prompt as `<output>/reference/concept-prompt.md`;
+   - reject wrong versions, cropped silhouettes, duplicate anatomy, smooth action-figure surfaces, invented accessories, featureless ball hands, fused feet, or joints without readable segmentation;
+   - make one targeted image repair when needed and re-check.
+4. Author `<output>/model.json` from the accepted concept:
+   - for `primitives-v1`, target 56-72 meaningful primitives and `requestedBrickCount: 16000`; complex articulated characters may use up to 80;
+   - build in Boolean order: structural `add`, identity-changing `subtract`, then thin color/detail `add`;
+   - map every landmark to concrete `part` names; use side-prefixed English part names such as `left_palm`, `left_thumb`, and `left_finger_block` so the checker can verify articulation;
+   - for `explicit-bricks-v1`, export unique coordinates and keep the result at or below 150,000 bricks.
+5. Recompute the self-check:
 
    ```bash
    python3 <skill-dir>/scripts/brick_model.py check <output>/model.json --write-self-check
    ```
 
-6. Repair every failed hard check and rerun it. Perform up to three focused repair passes. Never lower a threshold or claim that a failing model passed. If visual or numeric concerns remain, disclose them and still package the user's inspectable result.
+6. Repair every failed hard check and rerun it. Perform up to three focused repair passes. Never lower thresholds or claim a failing model passed.
 7. Build the standalone webpage and ZIP:
 
    ```bash
@@ -55,18 +56,22 @@ Do not treat a larger requested count as a substitute for the correct representa
      <output>/model.json --output <output>/viewer --zip
    ```
 
-8. Start the viewer and keep the process running:
+8. Start the viewer and keep it running:
 
    ```bash
    python3 <skill-dir>/scripts/serve_viewer.py <output>/viewer --port 0
    ```
 
-   Return the printed URL as the primary deliverable. In an environment that exposes forwarded ports, return its preview URL. If serving is unavailable, return `viewer/index.html`, `model.json`, and the ZIP artifact explicitly.
-9. Open the webpage when browser control is available. Verify model load, assembled form, disassembled form, drag rotation, zoom, and at least one alternate scatter shape. Capture the assembled three-quarter view and compare it with the accepted concept. Require at least 80% landmark agreement and full agreement on critical silhouette landmarks; use remaining repair passes for the largest mismatches.
+9. Validate in the browser:
+   - verify load, assembly, disassembly, rotation, zoom, and one alternate scatter layout;
+   - compare a matching three-quarter view against the concept;
+   - inspect close views of both hands, both feet, the face, and the major joints;
+   - require at least 80% landmark agreement, 100% critical silhouette agreement, and zero featureless ball hands or feet;
+   - spend repair passes on anatomy and structural readability before surface decoration.
 
-## Existing Models
+## Existing models
 
-Preserve an existing file unless the user requests in-place editing. Save a new revision, run the checker, then build a fresh viewer directory.
+Preserve the existing file unless the user requests in-place editing. Save a new revision, run the checker, and build a fresh viewer directory.
 
 ```bash
 python3 <skill-dir>/scripts/brick_model.py check <model.json> --json
@@ -74,14 +79,6 @@ python3 <skill-dir>/scripts/brick_model.py check <model.json> --json
 
 ## Handoff
 
-Always report:
+Report the running viewer URL, viewer directory, ZIP, source `model.json`, concept image, concept prompt, chosen subject/version, representation, count, quality result, landmark agreement, hand/foot articulation result, and unresolved warnings.
 
-- Clickable running viewer URL when available.
-- Viewer directory and ZIP path.
-- Source `model.json` path.
-- Accepted concept image and concept prompt paths.
-- Subject/version chosen, representation, primitive or explicit-brick count, and quality result.
-- Landmark agreement result against the concept image.
-- Any unresolved numeric or visual warning.
-
-The generated viewer is self-contained and carries local Three.js files. It supports assembly, disassembly, ring/sphere/tornado scatter layouts, progress scrubbing, automatic rotation, pointer orbit, pan, zoom, and light/dark theme. It does not require the BrickMorph website or an API key.
+The generated viewer carries local Three.js files and supports assembly, disassembly, ring/sphere/tornado scatter, progress scrubbing, automatic rotation, orbit, pan, zoom, and light/dark theme. It needs no BrickMorph website or API key.

@@ -15,6 +15,10 @@ from typing import Any
 ALLOWED_TYPES = {"box", "ellipsoid", "cylinder", "cone", "capsule", "torus", "frustum"}
 ALLOWED_AXES = {"x", "y", "z"}
 ALLOWED_CLASSES = {"humanoid_robot", "vehicle", "creature", "building", "object"}
+HAND_CORE_TOKENS = {"hand", "fist", "palm", "grip", "gripper"}
+HAND_DIGIT_TOKENS = {"thumb", "finger", "fingers", "knuckle", "knuckles", "claw", "jaw"}
+HAND_TOKENS = HAND_CORE_TOKENS | HAND_DIGIT_TOKENS
+ROUND_WHOLE_HAND_TYPES = {"ellipsoid", "capsule"}
 
 
 class ModelError(ValueError):
@@ -59,6 +63,74 @@ def primitive_volume(primitive: dict[str, Any]) -> float:
     bottom_area = math.prod(primitive["bottomSize"])
     top_area = math.prod(primitive["topSize"])
     return primitive["height"] / 3 * (bottom_area + top_area + math.sqrt(bottom_area * top_area))
+
+
+def part_tokens(part: str) -> set[str]:
+    normalized = part.casefold().replace("-", "_").replace(" ", "_")
+    return {token for token in normalized.split("_") if token}
+
+
+def assess_hand_articulation(primitives: list[dict[str, Any]]) -> tuple[dict[str, Any], list[str]]:
+    hand_primitives: list[tuple[dict[str, Any], set[str]]] = []
+    wrist_primitives: list[tuple[dict[str, Any], set[str]]] = []
+    for primitive in primitives:
+        if primitive["op"] != "add":
+            continue
+        tokens = part_tokens(primitive.get("part", ""))
+        if tokens & HAND_TOKENS:
+            hand_primitives.append((primitive, tokens))
+        elif "wrist" in tokens:
+            wrist_primitives.append((primitive, tokens))
+
+    side_parts: dict[str, list[tuple[dict[str, Any], set[str]]]] = {"left": [], "right": []}
+    unscoped = []
+    for primitive, tokens in hand_primitives:
+        sides = [side for side in side_parts if side in tokens]
+        if len(sides) == 1:
+            side_parts[sides[0]].append((primitive, tokens))
+        else:
+            unscoped.append(primitive.get("part", ""))
+    for primitive, tokens in wrist_primitives:
+        for side in side_parts:
+            if side in tokens and side_parts[side]:
+                side_parts[side].append((primitive, tokens))
+
+    articulated_sides = []
+    unarticulated_sides = []
+    for side, entries in side_parts.items():
+        if not entries:
+            continue
+        unique_parts = {primitive.get("part", "").casefold() for primitive, _ in entries}
+        has_core = any(tokens & HAND_CORE_TOKENS for _, tokens in entries)
+        has_digit = any(tokens & HAND_DIGIT_TOKENS for _, tokens in entries)
+        if len(unique_parts) >= 3 and has_core and has_digit:
+            articulated_sides.append(side)
+        else:
+            unarticulated_sides.append(side)
+
+    round_whole_hands = [
+        primitive.get("part", "")
+        for primitive, tokens in hand_primitives
+        if primitive["type"] in ROUND_WHOLE_HAND_TYPES and tokens & {"hand", "fist"}
+    ]
+    metrics = {
+        "handPartCount": len(hand_primitives) + sum(
+            1 for _, tokens in wrist_primitives if any(side in tokens and side_parts[side] for side in side_parts)
+        ),
+        "articulatedHandSideCount": len(articulated_sides),
+        "unarticulatedHandSideCount": len(unarticulated_sides),
+        "roundWholeHandCount": len(round_whole_hands),
+    }
+    issues = []
+    if unscoped:
+        issues.append("hand-related part names must include left or right side prefixes")
+    if unarticulated_sides:
+        joined = ", ".join(unarticulated_sides)
+        issues.append(f"hand articulation is incomplete for: {joined}; add palm/fist core, thumb, digit/knuckle blocks, and wrist")
+    if round_whole_hands:
+        joined = ", ".join(round_whole_hands)
+        issues.append(f"featureless round hand/fist primitives are not allowed: {joined}")
+    return metrics, issues
 
 
 def validate_primitive(source: Any, index: int, palette_count: int) -> dict[str, Any]:
@@ -207,6 +279,7 @@ def assess(model: dict[str, Any], primitives: list[dict[str, Any]]) -> tuple[dic
     named_ratio = len(named_parts) / primitive_count
     landmarks = model.get("landmarks", [])
     geometry_count = len({item["type"] for item in primitives})
+    hand_metrics, hand_issues = assess_hand_articulation(primitives)
 
     metrics = {
         "primitiveCount": primitive_count,
@@ -220,6 +293,7 @@ def assess(model: dict[str, Any], primitives: list[dict[str, Any]]) -> tuple[dic
         "landmarkCount": len(landmarks),
         "namedPartRatio": round(named_ratio, 6),
         "uniquePartCount": unique_parts,
+        **hand_metrics,
     }
 
     required_rotated = max(10, math.ceil(primitive_count * 0.22))
@@ -246,6 +320,11 @@ def assess(model: dict[str, Any], primitives: list[dict[str, Any]]) -> tuple[dic
         issues.append(f"namedPartRatio {named_ratio:.1%} is below 90%")
     if unique_parts < 10:
         issues.append(f"uniquePartCount {unique_parts} is below 10")
+    if model.get("subjectClass") == "humanoid_robot":
+        landmark_tokens = set().union(*(part_tokens(item) for item in landmarks)) if landmarks else set()
+        if landmark_tokens & HAND_TOKENS and hand_metrics["handPartCount"] == 0:
+            issues.append("landmarks mention hands or fists, but no semantic hand primitives were found")
+        issues.extend(hand_issues)
     return metrics, issues
 
 
@@ -332,6 +411,13 @@ def check_model(path: Path, *, write: bool, as_json: bool) -> int:
                 f"landmarks={metrics['landmarkCount']} named-parts={metrics['namedPartRatio']:.1%} "
                 f"unique-parts={metrics['uniquePartCount']}"
             )
+            if metrics["handPartCount"]:
+                print(
+                    f"  hand-parts={metrics['handPartCount']} "
+                    f"articulated-sides={metrics['articulatedHandSideCount']} "
+                    f"unarticulated-sides={metrics['unarticulatedHandSideCount']} "
+                    f"round-whole-hands={metrics['roundWholeHandCount']}"
+                )
         for issue in issues:
             print(f"  - {issue}")
         if write:
