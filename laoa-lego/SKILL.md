@@ -11,7 +11,7 @@ Deliver an interactive 3D webpage, not only model JSON. Use Codex's current mode
 
 For a keyword-only request, read [references/concept-image-workflow.md](references/concept-image-workflow.md), generate a clean brick-built concept image with the built-in image tool, and save the accepted image under `<output>/reference/`. Treat it as the visual contract.
 
-Preserve a supplied identity reference. A clear, full-subject brick-built render may serve directly as the concept. Do not author `model.json` until the concept passes the identity, buildability, articulation, and framing checks.
+Preserve a supplied identity reference under `<output>/reference/` and record its relative path as `identityReference` in `model.json`. A clear, full-subject brick-built render may serve directly as the concept. Do not author `model.json` until the concept passes the identity, buildability, articulation, and framing checks.
 
 If built-in image generation is unavailable, disclose the limitation and continue with direct modeling only after the user approves; never silently skip the concept gate.
 
@@ -37,6 +37,7 @@ Do not switch an entire 3D character to `explicit-bricks-v1` merely for scars, e
    - save the exact prompt as `<output>/reference/concept-prompt.md`;
    - reject wrong versions, cropped silhouettes, duplicate anatomy, smooth action-figure surfaces, invented accessories, featureless ball hands, fused feet, or joints without readable segmentation;
    - make one targeted image repair when needed and re-check.
+   - record `conceptReference: "reference/concept.png"` in `model.json`; when the user supplied an image, also record `identityReference` so the viewer can prefer the original user reference.
 4. Author `<output>/model.json` from the accepted concept:
    - for `primitives-v1`, target 56-72 meaningful primitives and `requestedBrickCount: 16000`; complex articulated characters may use up to 80;
    - build in Boolean order: structural `add`, identity-changing `subtract`, then thin color/detail `add`;
@@ -55,6 +56,8 @@ Do not switch an entire 3D character to `explicit-bricks-v1` merely for scars, e
    python3 <skill-dir>/scripts/build_viewer.py \
      <output>/model.json --output <output>/viewer --zip
    ```
+
+   The builder automatically packages the user reference when `identityReference`, `userReference`, or `referenceImage` is present; otherwise it packages `conceptReference`. For an older model without metadata, pass `--reference-image <path>` explicitly. The viewer shows the selected image as a bottom-right comparison thumbnail and opens the original image in a closable lightbox.
 
 8. Start the viewer and keep it running:
 
@@ -79,6 +82,6 @@ python3 <skill-dir>/scripts/brick_model.py check <model.json> --json
 
 ## Handoff
 
-Report the running viewer URL, viewer directory, ZIP, source `model.json`, concept image, concept prompt, chosen subject/version, representation, count, quality result, landmark agreement, hand/foot articulation result, and unresolved warnings.
+Report the running viewer URL, viewer directory, ZIP, source `model.json`, the comparison image displayed in the viewer, concept prompt, chosen subject/version, representation, count, quality result, landmark agreement, hand/foot articulation result, and unresolved warnings.
 
 The generated viewer carries local Three.js files and supports assembly, disassembly, ring/sphere/tornado scatter, progress scrubbing, automatic rotation, orbit, pan, zoom, and light/dark theme. It needs no BrickMorph website or API key.
