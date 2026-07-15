@@ -2093,7 +2093,7 @@ async function requestModelCode(keyword, count, config, qualityFeedback) {
 
 function safeFileName(value) {
   const cleaned = value.trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-");
-  return (cleaned || "lego-model").slice(0, 60);
+  return (cleaned || "laoa-lego-model").slice(0, 60);
 }
 
 function downloadModelCode(spec) {

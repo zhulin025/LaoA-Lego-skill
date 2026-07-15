@@ -1,0 +1,4 @@
+interface:
+  display_name: "LaoA-Lego skill"
+  short_description: "Create concept-led interactive brick-built 3D models."
+  default_prompt: "Use $laoa-lego to generate a canonical brick-built concept image first, then build and validate the matching interactive 3D model."
